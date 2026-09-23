@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -158,6 +159,23 @@ class RepositoryBaselineTests(unittest.TestCase):
 
                 lua_files = {path.relative_to(out).as_posix() for path in out.rglob("*.lua")}
                 self.assertEqual(lua_files - references, set(), f"{flavor} has orphan Lua files")
+
+    def test_release_archives_only_contain_generated_packages(self) -> None:
+        common = set(inventory(ROOT / "src" / "common"))
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "release"
+            result = subprocess.run(
+                [PYTHON, "build/package_release.py", "--out", str(output)],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            archives = sorted(output.glob("*.zip"))
+            self.assertEqual(len(archives), 2)
+            for flavor, archive in zip(("classic", "forever"), archives, strict=True):
+                expected = common | set(inventory(ROOT / "src" / flavor))
+                with zipfile.ZipFile(archive) as package:
+                    members = {name for name in package.namelist() if not name.endswith("/")}
+                self.assertEqual(members, {f"TurboFace/{name}" for name in expected})
 
 
 if __name__ == "__main__":

@@ -1,0 +1,140 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LuaJIT
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes luajit
+
+      - name: Verify architecture
+        run: python3 build/verify.py
+
+      - name: Run regression tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Build tagged release archives
+        run: python3 build/package_release.py --version "${GITHUB_REF_NAME#v}"
+
+      - name: Upload validated release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: turboface-release-${{ github.ref_name }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: turboface-release-${{ github.ref_name }}
+          path: release
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/*.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/*.zip \
+              --verify-tag \
+              --generate-notes \
+              --title "TurboFace ${GITHUB_REF_NAME#v}"
+          fi
+
+  curseforge:
+    needs:
+      - build
+      - github-release
+    runs-on: ubuntu-latest
+    environment: curseforge-production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - client: Classic
+            archive: TurboFace-Classic-*.zip
+            game_version: 1.15.9
+          - client: Forever
+            archive: TurboFace-Forever-*.zip
+            game_version: 1.60.1
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_PROJECT_ID: "1689135"
+      CF_API_BASE: https://wow.curseforge.com/api
+    steps:
+      - name: Download validated release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: turboface-release-${{ github.ref_name }}
+          path: release
+
+      - name: Require CurseForge credentials
+        run: |
+          if [ -z "$CF_API_TOKEN" ]; then
+            echo "CF_API_TOKEN is not configured in the curseforge-production environment." >&2
+            exit 1
+          fi
+
+      - name: Select CurseForge release type
+        id: release_type
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME,,}"
+          if [[ "$tag" == *alpha* ]]; then
+            value=alpha
+          elif [[ "$tag" == *beta* ]]; then
+            value=beta
+          else
+            value=release
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Upload ${{ matrix.client }} package to CurseForge
+        env:
+          RELEASE_TYPE: ${{ steps.release_type.outputs.value }}
+          ARCHIVE_PATTERN: ${{ matrix.archive }}
+          CLIENT_NAME: ${{ matrix.client }}
+          GAME_VERSION: ${{ matrix.game_version }}
+        run: |
+          file=$(find release -maxdepth 1 -type f -name "$ARCHIVE_PATTERN" -print -quit)
+          metadata=$(jq -cn \
+            --arg changelog "Release notes: https://github.com/Rumblecrush/TurboFace/releases/tag/$GITHUB_REF_NAME" \
+            --arg displayName "TurboFace $CLIENT_NAME ${GITHUB_REF_NAME#v}" \
+            --arg gameVersion "$GAME_VERSION" \
+            --arg releaseType "$RELEASE_TYPE" \
+            '{changelog: $changelog, changelogType: "markdown", displayName: $displayName, gameVersionNames: [$gameVersion], releaseType: $releaseType}')
+          curl --fail-with-body \
+            --header "X-Api-Token: $CF_API_TOKEN" \
+            --form "metadata=$metadata" \
+            --form "file=@$file" \
+            "$CF_API_BASE/projects/$CF_PROJECT_ID/upload-file"

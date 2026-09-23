@@ -35,7 +35,7 @@ rebuild both clients.
 
 Requirements:
 
-- Python 3
+- Python 3.10 or newer
 - LuaJIT, used to compile-check the Lua 5.1-compatible source during tests
 
 From the repository root:
@@ -74,6 +74,22 @@ the expected addon folder.
 - [Classic changelog](docs/classic/CHANGELOG.md)
 - [Forever changelog](docs/forever/CHANGELOG.md)
 - [Forever SavedVariables workaround](docs/forever/FOREVER_SAVEDVARIABLES_WORKAROUND.md)
+
+## Release automation
+
+GitHub Actions verifies every push and pull request and retains both generated
+ZIPs as workflow artifacts. Pushing a version tag such as `v0.17.87` runs the
+same validation, creates a GitHub Release, and uploads the separate Classic and
+Forever ZIPs to CurseForge project `1689135`.
+
+Before publishing a tag, configure the `curseforge-production` GitHub
+environment with a secret named `CF_API_TOKEN`. The tag's version without the
+leading `v` must exactly match the Classic TOC version; the release stops before
+publishing if version metadata has drifted.
+
+The release workflow uploads only generated archives. Repository source,
+tests, build tools, and developer documentation are not included in the addon
+downloads.
 
 ## License
 
