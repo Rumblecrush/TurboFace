@@ -1,0 +1,19 @@
+Flight Timer Classic data attribution
+=====================================
+
+Title: Flight Timer Classic
+Creator: Nomana (Timo Hausmann / timohausmann)
+Source: https://github.com/timohausmann/FlightTimerClassic
+Source revision: 5c9982c28af97da25baa3e7df39db62911a45840
+License: Creative Commons Attribution 2.0 Generic (CC BY 2.0)
+License URL: https://creativecommons.org/licenses/by/2.0/
+
+TurboFace adapts the directional flight-duration values from Data.lua. Changes
+include moving the data into the TurboFace namespace and using it only as a
+baseline beneath TurboFace's independently implemented full-route measurement
+and correction system. TurboFace does not imply endorsement by the creator.
+
+CC BY 2.0 permits sharing and adapting the material for any purpose, including
+commercially, provided appropriate credit is given, the license is linked, and
+changes are indicated. The canonical license URL above supplies the complete
+license terms.

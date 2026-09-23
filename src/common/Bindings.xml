@@ -1,0 +1,10 @@
+<Bindings>
+	<!-- CLICK bindings dispatch the click directly; legacy inline Lua
+	     script bodies are not executed by the modern client and were removed.
+	     Custom bar 7-10 bindings were removed with the ActionBars module
+	     (Edit Mode handback). -->
+	<Binding name="CLICK TurboFaceDeleteJunk:LeftButton" runOnUp="false" category="BINDING_HEADER_TURBOFACE"/>
+	<Binding name="CLICK TurboFaceMarkHoveredJunk:LeftButton" runOnUp="false" category="BINDING_HEADER_TURBOFACE"/>
+	<Binding name="CLICK TurboFaceDeleteHoveredItem:LeftButton" runOnUp="false" category="BINDING_HEADER_TURBOFACE"/>
+	<Binding name="CLICK TurboFaceToggleGroceryList:LeftButton" runOnUp="false" category="BINDING_HEADER_TURBOFACE"/>
+</Bindings>

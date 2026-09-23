@@ -1,0 +1,16 @@
+# Generated build output
+dist/
+release/
+
+# Local development history retained outside the public repository
+.local-history/
+
+# Python cache/test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Editor/OS noise
+.DS_Store
+*~

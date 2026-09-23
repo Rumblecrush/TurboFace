@@ -1,0 +1,203 @@
+## Interface: 16001
+## Title: |cff00ccffTurbo|cffffffffFace|r
+## Notes: All-in-one interface: nameplates, unit frames, movers, swing timers, castbars, XP/loot/power utilities
+## Author: Rumblecrush
+## X-Credits: Flight-time baseline adapted from Flight Timer Classic by Nomana (Timo Hausmann), CC BY 2.0; modified for TurboFace's hybrid seeded-and-learned flight timer system. See THIRD_PARTY_NOTICES.md.
+## Version: 0.17.87-ForeverPrep156-Forever69977
+## SavedVariables: TurboFaceDB, TurboFaceCacheDB, TurboFaceProfilesDB, TurboFaceTrainerDB, TurboFaceSpeedrunDB, TurboFaceCompatDB
+## SavedVariablesPerCharacter: TurboFaceCharDB, TurboFaceTrainerCharDB, TurboFaceCVarExportCharDB, TurboFaceSpeedrunCharDB
+## OptionalDeps: Baganator, UnstuckSkips
+## IconTexture: 237572
+## Category: Unit Frames
+## X-Category: Interface Enhancements
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibClassicDurations\LibClassicDurations.xml
+
+# LibProfessionDB 1.7.0 (MIT), Classic Era data only. Generated tables register
+# deferred loaders and materialize when a profession Training/Recipes tab needs them.
+Libs\LibProfessionDB\LibProfessionDB-1.0.lua
+Libs\LibProfessionDB\Loader.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Alchemy.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Blacksmithing.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Cooking.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Enchanting.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Engineering.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Firstaid.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Fishing.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Leatherworking.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Mining.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Tailoring.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\RecipeItems.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\HiddenRecipes.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\AcquireMethods.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\Sources.lua
+Libs\LibProfessionDB\Data\Vanilla\_core\SourceNames.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Alchemy.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Blacksmithing.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Cooking.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Enchanting.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Engineering.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Firstaid.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Fishing.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Leatherworking.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Mining.lua
+Libs\LibProfessionDB\Data\Vanilla\enUS\Tailoring.lua
+
+# Generated/manual SavedVariables restore snapshot. Must load before every
+# consumer, including Compatibility.lua and feature files with file-scope DB use.
+Core\ForeverRestoreData.lua
+Core\Compat.lua
+Core\Compatibility.lua
+Core\Client.lua
+Core\Providers.lua
+Core\Schema.lua
+Core\Config.lua
+Core\ForeverSchema.lua
+Core\Defaults.lua
+Core\Migrations.lua
+Core\ProfessionData.lua
+Core\Debug.lua
+Core\CVarBrowser.lua
+Core\CPUProfiler.lua
+Core\Profiles.lua
+Core\ForeverDevPreset.lua
+Core\SharedMedia.lua
+Nameplates\Provider.lua
+Nameplates\TurboDebuffs.lua
+Core.lua
+QuickSetup.lua
+
+# PvP enemy-player max-health estimator used by DoT prediction. UI-independent.
+Combat\PvPHealthEstimate.lua
+
+# DoT prediction engine. Must load BEFORE the nameplate and unit frame files:
+# they register as consumers at file scope. Needs only ns.CLEU (Config) and
+# ns.API (Compat), both loaded above.
+Combat\DotPrediction.lua
+
+# Incoming-heal prediction engine. UI-independent; the Blizzard-bar prediction renderer consumes it.
+Combat\HealPrediction.lua
+
+# Era fallback: TurboFace-owned local damage/DPS meter. Forever uses Blizzard C_DamageMeter instead.
+Combat\CombatMeter.lua
+# Forever/Mainline public C_DamageMeter bridge for the independent PlayerFrame badge.
+Combat\BlizzardDamageMeterBridge.lua
+# Independent Blizzard PlayerFrame DPS/HPS badge; provider is BlizzardDamageMeterBridge when available, CombatMeter on Era.
+Combat\DPSBadge.lua
+# Independent enemy leash countdown; shared CLEU + demand-driven cadence.
+Combat\LeashTimer.lua
+
+Nameplates\Auras.lua
+Nameplates\Nameplates.lua
+Nameplates\NativeNameStyle.lua
+Nameplates\NativeHealthTextStyle.lua
+Nameplates\NativeRarityIconStyle.lua
+Nameplates\NameplateVisuals.lua
+Nameplates\NameplateUnits.lua
+Combat\Provider.lua
+Combat\ForeverNativeAdapter.lua
+Combat\ClassFeatures.lua
+Combat\ClassBuffs.lua
+UnitFrames\Provider.lua
+UnitFrames\DruidPowerBar.lua
+Nameplates\Stacking.lua
+UnitFrames\UnitFrames.lua
+UnitFrames\ForeverNativeAdapter.lua
+UnitFrames\PetHappiness.lua
+PartyPetAuras.lua
+
+# Consumer-side rendering for the DoT/heal prediction engines, split out of
+# UnitFrames/UnitFrames.lua. Must load AFTER Combat/DotPrediction.lua and Combat/HealPrediction.lua (it
+# calls RegisterConsumer at file scope) and AFTER UnitFrames/UnitFrames.lua (needs ns.UF).
+UnitFrames\Predictions.lua
+UnitFrames\ShieldData.lua
+UnitFrames\nanShield.lua
+Combat\SwingTimerSpellData.lua
+Combat\QueueDiagnostics.lua
+Combat\SwingTimerProvider.lua
+Combat\ForeverSwingTimerAdapter.lua
+Combat\SwingTimers.lua
+Combat\Castbars.lua
+Nameplates\BubbleNameplates.lua
+Nameplates\ForeverNativeAdapter.lua
+Nameplates\ForeverAuras.lua
+Inventory\InventoryManager.lua
+Inventory\Bank.lua
+Inventory\Grocery.lua
+Inventory\NetWorth.lua
+Inventory\BagSlots.lua
+FPSCounter.lua
+SpendTalentPoint.lua
+Hearthstone.lua
+UnstuckSkipsVisual.lua
+HearthBatch.lua
+MinimapTracker.lua
+MinimapButton.lua
+AuraStyle.lua
+Movers\Movers.lua
+Movers\Auras.lua
+Movers\Systems.lua
+ExperienceBar.lua
+SpeedrunSplits.lua
+LootFrame.lua
+Plus\Provider.lua
+Plus\ForeverNativeAdapter.lua
+Plus\Automation.lua
+Plus\Social.lua
+Plus\InterfaceTweaks.lua
+Plus\MapTweaks.lua
+Plus\SystemTweaks.lua
+Plus\ChatTweaks.lua
+# CC BY 2.0 baseline durations load before TurboFace's hybrid flight engine.
+Plus\FlightData.lua
+Plus\FlightBar.lua
+Power\PowerCost.lua
+Power\RegenTicks.lua
+
+# --- Training ---
+# Trainer.lua first: it creates ns.Trainer and the saved-variable tables.
+# Class/pet seed data below is derived from What's Training? (MIT); profession
+# recipes come from LibProfessionDB and live trainer APIs add cost/status data.
+Trainer\Trainer.lua
+Trainer\Provider.lua
+Trainer\ForeverNativeAdapter.lua
+
+Trainer\data\Druid.lua
+Trainer\data\Hunter.lua
+Trainer\data\HunterPet.lua
+Trainer\data\Mage.lua
+Trainer\data\Paladin.lua
+Trainer\data\Priest.lua
+Trainer\data\Rogue.lua
+Trainer\data\Shaman.lua
+Trainer\data\Warlock.lua
+Trainer\data\WarlockPet.lua
+Trainer\data\Warrior.lua
+Trainer\data\ForeverProfessions.lua
+
+Trainer\Init.lua
+Trainer\SkillData.lua
+Trainer\PetNames.lua
+Trainer\BuiltinMerge.lua
+Trainer\TrainerCapture.lua
+Trainer\PetMerchantCapture.lua
+Trainer\TrainerListUI.lua
+Trainer\Ignore.lua
+Trainer\TrainingQueue.lua
+Trainer\Events.lua
+
+Trainer\UI_Core.lua
+Trainer\UI_ClassData.lua
+Trainer\UI_ClassList.lua
+Trainer\UI_Skills.lua
+Trainer\UI_Profession.lua
+Trainer\UI_Spellbook.lua
+
+# Skill engine + HUD tracker. Shared profession identity/icon metadata comes
+# from Core/ProfessionData.lua, so Skills and Trainer are sibling consumers.
+Skills.lua
+
+Options\OptionsGUI.lua

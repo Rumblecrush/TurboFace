@@ -1,0 +1,5 @@
+LibStub
+https://www.wowace.com/projects/libstub
+
+LibStub is placed in the public domain by its authors. The bundled source
+credits Kaelten, Cladhaire, ckknight, Mikk, Ammo, Nevcairiel, and joshborke.
