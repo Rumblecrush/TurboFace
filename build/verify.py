@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -666,6 +667,9 @@ def main() -> None:
     readme = (ROOT / "README.md").read_text(errors="replace")
     if "PHASE33_REPORT.md" in readme or "Phase 33)" in readme:
         raise SystemExit("README regressed to an internal phase-report landing page")
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(errors="replace")
+    if not re.search(r'^\s+-\s+["\x27]v\*["\x27]\s*$', release_workflow, re.MULTILINE):
+        raise SystemExit("release workflow must trigger on v* tags")
 
     source_map = (ROOT / "docs" / "SOURCE_MAP.md").read_text(errors="replace")
     strategy = (ROOT / "docs" / "MULTICLIENT_STRATEGY.md").read_text(errors="replace")
@@ -687,7 +691,6 @@ def main() -> None:
             raise SystemExit(f"Forever architecture still references removed manifest tooling: {stale_manifest}")
 
     # Local Markdown links in the public README and canonical docs must resolve.
-    import re
     public_docs = [ROOT / "README.md", *(ROOT / "docs").rglob("*.md")]
     for doc in public_docs:
         text = doc.read_text(errors="replace")
