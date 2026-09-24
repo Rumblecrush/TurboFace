@@ -228,6 +228,13 @@ FOREVER_SAVEDVARIABLES_WORKAROUND.md
 
 The generated restore snapshot must load before any consumer that can read `TurboFaceDB` at file scope. When a valid restore payload is present, it is authoritative for that login. When no valid payload exists, the hardcoded Dev Preset supplies a deterministic testing baseline.
 
+The hardcoded fallback mirrors the promoted live Forever configuration: Unit
+Frames, Auras, Cast Bars, Class helpers, and Swing Timers remain parked;
+detached-safe Nameplates, Hotbar Power, Player Ticks, selected QoL sections,
+Quick Setup, leveling/inventory widgets, and the recorded mover layout start
+enabled. The preset contains configuration only and must never absorb cache,
+trainer, speedrun, profile-library, or per-character state.
+
 This workaround is **not** the desired release architecture and must never become a second feature-gating system. Normal module/feature Options remain the runtime gates after initialization.
 
 The packaged source-tree `Core/ForeverRestoreData.lua` must remain inert. Development installations may deliberately replace the live copy with an external generated snapshot, but release packaging must never accidentally ship that private active snapshot.
