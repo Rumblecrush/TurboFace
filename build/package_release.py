@@ -12,6 +12,13 @@ from build_client import ROOT, build, validate_destination
 
 VERSION_PATTERN = re.compile(r"^## Version:\s*(\S+)\s*$", re.MULTILINE)
 
+# CurseForge rejects addon archives containing executable batch launchers. Keep
+# these development helpers in the source/build tree, but never ship them in a
+# public addon archive.
+RELEASE_EXCLUDED_PATHS = {
+    Path("Save-TurboFaceForever.bat"),
+}
+
 
 def toc_version(package: Path) -> str:
     toc = package / "TurboFace.toc"
@@ -27,6 +34,8 @@ def write_archive(package: Path, archive: Path) -> None:
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as output:
         for source in sorted(path for path in package.rglob("*") if path.is_file()):
             relative = source.relative_to(package)
+            if relative in RELEASE_EXCLUDED_PATHS:
+                continue
             output.write(source, (Path("TurboFace") / relative).as_posix())
 
 

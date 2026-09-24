@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
 **Last updated:** 2026-09-23
-**Current addon version:** 0.18.0
+**Current addon version:** 0.18.1
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79

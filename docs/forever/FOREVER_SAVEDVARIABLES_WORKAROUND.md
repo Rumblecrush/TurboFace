@@ -11,7 +11,8 @@ manual snapshot bridge for that client bug.
    `TurboFace.lua` files.
 3. Save the snapshot from the installed `Interface\AddOns\TurboFaceForever`
    folder:
-   - Windows: double-click `Save-TurboFaceForever.bat`.
+   - Windows: open PowerShell in the addon folder and run
+     `& ".\Tools\Save-ForeverVariables.ps1"`.
    - Linux/Proton: open a terminal there and run
      `./Save-TurboFaceForever.sh`.
 4. Review the account and character paths printed by the script. Numeric realm
@@ -86,3 +87,7 @@ the native Linux path explicitly:
 
 The script reads the prefix as ordinary Linux files; it does not need to run
 inside Proton, Wine, or a Windows PowerShell process.
+
+The source repository retains `Save-TurboFaceForever.bat` as a development
+convenience, but public release archives omit batch launchers because
+CurseForge does not accept them inside addon packages.

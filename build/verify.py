@@ -193,9 +193,9 @@ def merged_expected(flavor: str) -> dict[str, str]:
 def main() -> None:
     classic_toc_source = (ROOT / "src" / "classic" / "TurboFace.toc").read_text(errors="replace")
     forever_toc_source = (ROOT / "src" / "forever" / "TurboFace.toc").read_text(errors="replace")
-    if "## Version: 0.18.0" not in classic_toc_source:
+    if "## Version: 0.18.1" not in classic_toc_source:
         raise SystemExit("Classic version contract changed unexpectedly")
-    if "## Version: 0.18.0" not in forever_toc_source:
+    if "## Version: 0.18.1" not in forever_toc_source:
         raise SystemExit("Forever version contract changed unexpectedly")
 
     common = set(inventory(ROOT / "src" / "common"))
@@ -674,7 +674,7 @@ def main() -> None:
     source_map = (ROOT / "docs" / "SOURCE_MAP.md").read_text(errors="replace")
     strategy = (ROOT / "docs" / "MULTICLIENT_STRATEGY.md").read_text(errors="replace")
     for marker in (
-        "**Forever:** 0.18.0 / Interface 16001",
+        "**Forever:** 0.18.1 / Interface 16001",
         "| Byte-identical same-path files | 176 |",
         "| Same-path but different contents | 5 |",
         "| Forever-only paths | 17 |",
