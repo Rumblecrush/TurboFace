@@ -2,9 +2,9 @@
 
 **Audit date:** 2026-09-23
 
-**Classic:** 0.18.0 / Interface 11509
+**Classic:** 0.18.1 / Interface 11509
 
-**Forever:** 0.18.0 / Interface 16001
+**Forever:** 0.18.1 / Interface 16001
 
 This document describes the current physical source and package ownership. It
 is not a feature-parity matrix: one differing line can represent a critical
@@ -24,6 +24,10 @@ protected-frame or secret-value boundary.
 
 The union is 199 relative paths. Generated packages are the exact overlay of
 `src/common/` with `src/classic/` or `src/forever/`.
+
+Public release archives apply one distribution-only exclusion:
+`Save-TurboFaceForever.bat` remains in the Forever source/build tree for local
+development but is omitted from ZIPs because CurseForge rejects batch files.
 
 ## First-party source
 

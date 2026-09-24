@@ -173,9 +173,14 @@ class RepositoryBaselineTests(unittest.TestCase):
             self.assertEqual(len(archives), 2)
             for flavor, archive in zip(("classic", "forever"), archives, strict=True):
                 expected = common | set(inventory(ROOT / "src" / flavor))
+                expected.discard("Save-TurboFaceForever.bat")
                 with zipfile.ZipFile(archive) as package:
                     members = {name for name in package.namelist() if not name.endswith("/")}
                 self.assertEqual(members, {f"TurboFace/{name}" for name in expected})
+                self.assertFalse(
+                    any(Path(name).suffix.lower() == ".bat" for name in members),
+                    f"{flavor} release archive contains a rejected batch launcher",
+                )
 
 
 if __name__ == "__main__":

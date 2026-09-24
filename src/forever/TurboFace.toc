@@ -3,7 +3,7 @@
 ## Notes: All-in-one interface: nameplates, unit frames, movers, swing timers, castbars, XP/loot/power utilities
 ## Author: Rumblecrush
 ## X-Credits: Flight-time baseline adapted from Flight Timer Classic by Nomana (Timo Hausmann), CC BY 2.0; modified for TurboFace's hybrid seeded-and-learned flight timer system. See THIRD_PARTY_NOTICES.md.
-## Version: 0.18.0
+## Version: 0.18.1
 ## SavedVariables: TurboFaceDB, TurboFaceCacheDB, TurboFaceProfilesDB, TurboFaceTrainerDB, TurboFaceSpeedrunDB, TurboFaceCompatDB
 ## SavedVariablesPerCharacter: TurboFaceCharDB, TurboFaceTrainerCharDB, TurboFaceCVarExportCharDB, TurboFaceSpeedrunCharDB
 ## OptionalDeps: Baganator, UnstuckSkips

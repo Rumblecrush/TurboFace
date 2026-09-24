@@ -1,5 +1,11 @@
 # TurboFace Classic Changelog
 
+## 0.18.1 — distribution packaging correction
+
+- Excluded the source-only Forever batch launcher from public addon archives so CurseForge can validate both client packages.
+- Added a release regression check preventing `.bat` files from entering future ZIPs.
+- No gameplay or SavedVariables schema change.
+
 ## 0.18.0 — first unified multi-client release
 
 - Published Classic and Forever from one layered source repository with separate installable packages.
