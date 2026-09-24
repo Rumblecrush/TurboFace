@@ -11,6 +11,92 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_forever_fallback_matches_promoted_live_defaults(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the Forever preset contract")
+        harness = r'''
+local ns = { Client = { flavor = "forever" }, DB_VERSION = 79 }
+function ns.DeepCopy(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local out = {}
+    seen[value] = out
+    for key, child in pairs(value) do
+        out[ns.DeepCopy(key, seen)] = ns.DeepCopy(child, seen)
+    end
+    return out
+end
+
+WOW_PROJECT_ID = 1
+function GetBuildInfo() return "1.60.1", "", "", 16001 end
+
+assert(loadfile("src/common/Core/Schema.lua"))("TurboFace", ns)
+assert(loadfile("src/forever/Core/ForeverSchema.lua"))("TurboFace", ns)
+assert(loadfile("src/common/Core/Defaults.lua"))("TurboFace", ns)
+assert(loadfile("src/common/Core/Profiles.lua"))("TurboFace", ns)
+assert(loadfile("src/forever/Core/ForeverDevPreset.lua"))("TurboFace", ns)
+
+local data = ns.ForeverDevPreset:BuildData()
+local modules = data.modules
+assert(modules.unitframes.enabled == false)
+assert(modules.nameplates.enabled == true)
+assert(modules.hotbarPower.enabled == true)
+assert(modules.playerTicks.enabled == true)
+assert(modules.swingTimers.enabled == false)
+assert(modules.auras.enabled == false)
+assert(modules.castBars.enabled == false)
+assert(modules.class.enabled == false)
+assert(modules.plus.minimap == false and modules.plus.social == false)
+
+assert(data.quickSetup.enabled == true)
+assert(data.hearthTextStyle == "SHADOW")
+assert(data.netWorthFontSize == 11)
+assert(data.lootFrame.width == 220)
+assert(data.plus.weatherLevel == 1)
+for _, key in ipairs({
+    "hideHitIndicators", "hideKeybindText", "hideMiniClock",
+    "hideMiniDayNight", "hideMiniLFG", "hideMiniZoneText",
+    "hideMiniZoomBtns", "hideRaidGroupLabels", "hideZoneText",
+    "keepAudioSynced", "minimapZoneBanner", "noBagAutomation",
+    "noCombatLogTab", "noConfirmLoot", "noRestedEmotes",
+    "noScreenEffects", "noScreenGlow", "setWeatherDensity",
+    "showRaidToggle",
+}) do
+    assert(data.plus[key] == false, key .. " did not preserve the live setting")
+end
+
+assert(data.combinedBag.point == "RIGHT")
+assert(data.combinedBag.relativePoint == "RIGHT")
+assert(data.combinedBag.x == -22.22224235534668)
+assert(data.combinedBag.y == -173.5000305175781)
+assert(data.movers.activeElement == "GroceryButton")
+local expectedPositions = {
+    BagSlots = { 400, -510 },
+    ExperienceBar = { -875, -220 },
+    FPSCounter = { -400, -510 },
+    GroceryButton = { 555, -580 },
+    Hearthstone = { -400, -525 },
+    NetWorth = { 400, -525 },
+    SpeedrunSplits = { -930, 495 },
+}
+for name, expected in pairs(expectedPositions) do
+    local mover = data.movers.elements[name]
+    assert(mover.x == expected[1] and mover.y == expected[2], name .. " position drifted")
+end
+for _, name in ipairs({
+    "BlizzardLootFrame", "GameTooltip", "LatencyBar", "MinimapClock",
+    "MinimapLFG", "MinimapMail", "QuestTracker", "TargetBuffs",
+    "TargetDebuffs", "TargetFrameToT", "ToTDebuffs",
+}) do
+    assert(data.movers.elements[name].enabled == false, name .. " should start disabled")
+end
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_cadence_isolates_and_evicts_failing_clients(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the cadence runtime contract")

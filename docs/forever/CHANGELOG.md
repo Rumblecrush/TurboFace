@@ -1,5 +1,12 @@
 # TurboFace Forever Changelog
 
+## Unreleased — promoted live Forever defaults
+
+- Promoted the current live 1.60.1 account configuration into the client-owned hardcoded fallback used when no valid restore snapshot exists.
+- Enabled detached-safe Nameplates and Hotbar Power while retaining the parked Unit Frame, Aura, Cast Bar, Class, and Swing Timer families.
+- Captured the current Combined Bag anchor, mover positions/visibility, selected QoL section state, Quick Setup choice, weather density, and small visual tunings.
+- Kept trainer observations, speedrun history, caches, profiles, and per-character data outside the preset. Classic and portable schema version 79 are unchanged.
+
 ## 0.18.1 — CurseForge packaging correction
 
 - Removed `Save-TurboFaceForever.bat` from public release ZIPs after CurseForge rejected the 0.18.0 Forever archive for containing a batch file.

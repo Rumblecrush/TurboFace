@@ -72,25 +72,56 @@ local function SetModule(data, family, enabled, children)
     data.modules[family] = row
 end
 
+local function SetMover(data, name, values)
+    data.movers = type(data.movers) == "table" and data.movers or {}
+    data.movers.elements = type(data.movers.elements) == "table" and data.movers.elements or {}
+    local row = type(data.movers.elements[name]) == "table" and data.movers.elements[name] or {}
+    data.movers.elements[name] = row
+    for key, value in pairs(values) do row[key] = value end
+end
+
+local CURRENTLY_DISABLED_PLUS = {
+    "hideHitIndicators",
+    "hideKeybindText",
+    "hideMiniClock",
+    "hideMiniDayNight",
+    "hideMiniLFG",
+    "hideMiniZoneText",
+    "hideMiniZoomBtns",
+    "hideRaidGroupLabels",
+    "hideZoneText",
+    "keepAudioSynced",
+    "minimapZoneBanner",
+    "noBagAutomation",
+    "noCombatLogTab",
+    "noConfirmLoot",
+    "noRestedEmotes",
+    "noScreenEffects",
+    "noScreenGlow",
+    "setWeatherDensity",
+    "showRaidToggle",
+}
+
 local BASE_DATA, BASE_SCHEMA = BaseData()
 Dev.schemaVersion = tonumber(BASE_SCHEMA) or ns.DB_VERSION
 
 function Dev:BuildData()
     local data = Copy(BASE_DATA or {})
 
-    -- Handoff baseline: keep the two large visual port families parked while
-    -- we exercise the already-prepared utility/runtime surfaces.  SavedVariables
-    -- are unreliable on build 69913, so every reload intentionally returns here.
+    -- Promoted Forever baseline captured from the live 1.60.1 layout. Unit
+    -- Frames remain parked, while the detached-safe Nameplates and Hotbar Power
+    -- paths are enabled. SavedVariables are unreliable on this beta, so every
+    -- login without a valid restore snapshot intentionally returns here.
     SetModule(data, "unitframes", false, {
         player = false, target = false, tot = false, party = false, pet = false,
     })
-    SetModule(data, "nameplates", false)
+    SetModule(data, "nameplates", true)
     SetModule(data, "auras", false, {
         tot = false, party = false, pet = false,
     })
-    SetModule(data, "hotbarPower", false)
+    SetModule(data, "hotbarPower", true)
     SetModule(data, "playerTicks", true)
-    SetModule(data, "swingTimers", true)
+    SetModule(data, "swingTimers", false)
     SetModule(data, "castBars", false)
     SetModule(data, "class", false)
 
@@ -99,9 +130,9 @@ function Dev:BuildData()
     data.modules.plus = {
         enabled = true,
         automation = true,
-        social = true,
+        social = false,
         interface = true,
-        minimap = true,
+        minimap = false,
         chat = true,
         system = true,
         flightBar = true,
@@ -120,6 +151,10 @@ function Dev:BuildData()
             end
         end
     end
+    for _, key in ipairs(CURRENTLY_DISABLED_PLUS) do
+        data.plus[key] = false
+    end
+    data.plus.weatherLevel = 1
 
     -- Known-unfinished consumers that can otherwise wake independently of the
     -- module tree.  These remain explicit so defaults cannot silently re-enable
@@ -144,7 +179,7 @@ function Dev:BuildData()
     data.auraEnabled = false
 
     data.quickSetup = type(data.quickSetup) == "table" and data.quickSetup or {}
-    data.quickSetup.enabled = false
+    data.quickSetup.enabled = true
 
     -- Preserve the already-working speedrun/HUD surfaces from the development
     -- layout so the handoff build remains useful while QoL is exercised.
@@ -160,15 +195,42 @@ function Dev:BuildData()
     data.experienceBar = type(data.experienceBar) == "table" and data.experienceBar or {}
     data.experienceBar.enabled = true
 
+    -- Promote the current 1.60.1 handoff layout into the client-owned fallback.
+    -- Only configuration is captured here; cache, trainer, speedrun, profile,
+    -- and per-character state remain external SavedVariables.
+    data.combinedBag = {
+        point = "RIGHT", relativePoint = "RIGHT",
+        x = -22.22224235534668, y = -173.5000305175781,
+    }
+    data.movers = type(data.movers) == "table" and data.movers or {}
+    data.movers.activeElement = "GroceryButton"
+    SetMover(data, "BagSlots",       { x = 400,  y = -510 })
+    SetMover(data, "ExperienceBar",  { x = -875, y = -220 })
+    SetMover(data, "FPSCounter",     { x = -400, y = -510 })
+    SetMover(data, "GroceryButton",  { x = 555,  y = -580 })
+    SetMover(data, "Hearthstone",    { x = -400, y = -525 })
+    SetMover(data, "NetWorth",       { x = 400,  y = -525 })
+    SetMover(data, "SpeedrunSplits", { x = -930, y = 495 })
+    for _, name in ipairs({
+        "BlizzardLootFrame", "GameTooltip", "LatencyBar", "MinimapClock",
+        "MinimapLFG", "MinimapMail", "QuestTracker", "TargetBuffs",
+        "TargetDebuffs", "TargetFrameToT", "ToTDebuffs",
+    }) do
+        SetMover(data, name, { enabled = false })
+    end
+
+    data.hearthTextStyle = "SHADOW"
+    data.netWorthFontSize = 11
+    data.lootFrame.width = 220
+
     -- Keep the independent PlayerFrame badge out of the handoff baseline while
     -- Unit Frames are parked.  The Blizzard C_DamageMeter bridge remains in the
     -- codebase for dedicated validation later.
     data.unitframes = type(data.unitframes) == "table" and data.unitframes or {}
     data.unitframes.showPlayerDPS = false
 
-    -- Nameplates are OFF in the handoff baseline.  Keep their stored child
-    -- values conservative so a developer who enables the master during a single
-    -- session starts from the detached-safe subset rather than native mutation.
+    -- Nameplates use the detached-safe subset. Keep stored child values
+    -- conservative and avoid reintroducing native frame mutation.
     data.showComboPoints = true
     local bubble = type(data.bubbleNameplates) == "table" and data.bubbleNameplates or {}
     data.bubbleNameplates = bubble
