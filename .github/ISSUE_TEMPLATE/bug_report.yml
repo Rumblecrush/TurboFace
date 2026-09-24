@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible TurboFace problem
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      options:
+        - WoW Classic Era
+        - WoW Forever
+    validations:
+      required: true
+  - type: input
+    id: addon-version
+    attributes:
+      label: TurboFace version
+      placeholder: 0.18.1
+    validations:
+      required: true
+  - type: input
+    id: game-build
+    attributes:
+      label: Exact game version and build
+      description: Include the build number shown by the client, especially for WoW Forever.
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Enable ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: lua-error
+    attributes:
+      label: Lua error
+      description: Paste the complete error and stack trace, if one appeared.
+      render: text
+  - type: textarea
+    id: addons
+    attributes:
+      label: Other enabled addons
+      description: List other addons or say whether the problem occurs with only TurboFace enabled.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested with the package matching my client.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true

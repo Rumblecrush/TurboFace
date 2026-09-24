@@ -4,6 +4,7 @@
 
 - Excluded the source-only Forever batch launcher from public addon archives so CurseForge can validate both client packages.
 - Added a release regression check preventing `.bat` files from entering future ZIPs.
+- Reorganized the public repository around a player-facing README, dedicated maintainer guides, clear support links, issue forms, and a root third-party notice index.
 - No gameplay or SavedVariables schema change.
 
 ## 0.18.0 — first unified multi-client release

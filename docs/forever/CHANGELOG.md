@@ -5,6 +5,7 @@
 - Removed `Save-TurboFaceForever.bat` from public release ZIPs after CurseForge rejected the 0.18.0 Forever archive for containing a batch file.
 - Retained the launcher in the source repository and retained the underlying PowerShell and Linux snapshot tools in the installable Forever package.
 - Updated Windows workaround instructions to invoke the PowerShell tool directly.
+- Reorganized the public repository around a player-facing README, dedicated maintainer guides, clear support links, issue forms, and a root third-party notice index.
 - No gameplay or SavedVariables schema change.
 
 ## 0.18.0 — first unified multi-client release

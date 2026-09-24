@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an improvement for TurboFace
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client scope
+      options:
+        - Both clients
+        - WoW Classic Era
+        - WoW Forever
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What player need would this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested behavior
+      description: Describe how you would expect the feature to work.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional; describe current workarounds or related addons.

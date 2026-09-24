@@ -1,103 +1,153 @@
 # TurboFace
 
-TurboFace is an all-in-one World of Warcraft interface addon with builds for
-Classic Era and WoW Forever. This repository is the canonical multi-client
-source tree; installable client packages are generated outputs.
+**An all-in-one speedrunning and interface addon for WoW Classic Era and WoW Forever.**
+
+[![Latest release](https://img.shields.io/github/v/release/Rumblecrush/TurboFace?label=release)](https://github.com/Rumblecrush/TurboFace/releases/latest)
+[![Verify and build](https://github.com/Rumblecrush/TurboFace/actions/workflows/ci.yml/badge.svg)](https://github.com/Rumblecrush/TurboFace/actions/workflows/ci.yml)
+
+[Download on CurseForge](https://www.curseforge.com/wow/addons/turboface) ·
+[Download from GitHub](https://github.com/Rumblecrush/TurboFace/releases/latest) ·
+[Join Discord](https://discord.gg/apZzz38M9)
+
+TurboFace combines combat information, leveling and speedrun tools, inventory
+automation, training helpers, movers, and profiles in one configurable addon.
+It enhances the native UI while keeping the information needed for fast,
+repeatable leveling close at hand.
 
 ## Supported clients
 
-| Client | Interface | Package version |
-|---|---:|---|
-| WoW Classic Era | 11509 | 0.18.1 |
-| WoW Forever | 16001 | 0.18.1 |
+| Client | Status | Interface | Package |
+|---|---|---:|---|
+| WoW Classic Era | Stable | 11509 | `TurboFace-Classic-0.18.1.zip` |
+| WoW Forever | Supported beta client | 16001 | `TurboFace-Forever-0.18.1.zip` |
 
-## Repository layout
+Use only the package matching your client. GitHub Releases provides both ZIPs
+for direct installation. CurseForge availability can follow its normal file
+review process.
 
-```text
-src/common/   shared implementation used by both clients
-src/classic/  Classic-specific compatibility, policy, and assets
-src/forever/  Forever-specific compatibility, adapters, and tools
-build/        package builder and architectural verification
-tests/        repository and runtime-contract regression tests
-docs/         architecture, source ownership, and changelogs
-dist/         generated local packages (ignored by Git)
-```
+## Feature highlights
 
-Portable functionality belongs in `src/common/`. Client differences belong in
-the appropriate compatibility, client-policy, or provider boundary. The
-remaining same-path client divergences are intentional and verified; files
-must not be merged merely to reduce the divergence count.
+### Nameplates and unit frames
 
-Do not edit generated packages under `dist/`. Change the source layers and
-rebuild both clients.
+- Enhanced native nameplates with optional threat numbers, aggro audio,
+  important auras, combo points, quest indicators, power overlays, and swing
+  information.
+- Configurable Player, Target, Target-of-Target, Pet, and Party frames with
+  Classic-style artwork.
+- DoT and incoming-heal prediction, absorb bars, aura styling, health and power
+  text, cast bars, and raid/classification indicators.
 
-## Build and verify
+### Combat tools
 
-Requirements:
+- Main-hand, off-hand, ranged, and target swing timers.
+- Player and target cast bars as standalone widgets or integrated unit-frame
+  elements.
+- Lightweight current/overall damage and healing meter with an optional
+  PlayerFrame DPS/HPS badge.
+- Enemy leash countdowns, class resources, important-buff reminders, and
+  class-specific combat indicators.
 
-- Python 3.10 or newer
-- LuaJIT, used to compile-check the Lua 5.1-compatible source during tests
+### Leveling, training, and speedrunning
 
-From the repository root:
+- XP bar with XP/hour, rested and quest XP, session time, and level-time data.
+- Cumulative `/played` speedrun splits with personal-best and segment
+  comparisons.
+- Level-one Quick Setup for selected macros, bindings, action placement, CVars,
+  and supported UI settings.
+- Training and Skills pages integrated with the Spellbook, profession Training
+  and Recipes views, per-character training queues, and skill tracking.
 
-```bash
-python3 build/verify.py
-python3 -m unittest discover -s tests -v
-python3 build/build_client.py classic --out dist/TurboFaceClassic
-python3 build/build_client.py forever --out dist/TurboFaceForever
-```
+### Inventory and utility
 
-Each generated directory is a complete addon package. Stage the selected
-output as `TurboFace/` when creating an installable archive so it extracts to
-the expected addon folder.
+- Custom loot notifications with quality, quantity, and vendor value.
+- Junk/useful/bank item marking, merchant selling, bank routing, free-slot
+  tracking, and a Net Worth display.
+- Grocery List planning for repeat purchases such as food, water, reagents,
+  ammunition, poisons, potions, and other supplies.
+- Hearthstone location/cooldown tools and an optional Classic batching
+  assistant.
+- Hybrid Flight Bar with immediate route estimates and account-wide learning
+  from completed flights.
+- Minimap, map, chat, social, automation, and general quality-of-life options.
+- Optional integration with UnstuckSkips and Baganator.
 
-## Development rules
+## Installation
 
-1. Inspect the shared module and both clients' Compat, policy, and provider
-   implementations before deciding where a change belongs.
-2. Implement portable behavior once in `src/common/`.
-3. Keep `Core/Compat.lua` client-specific; it is the primary API and
-   secret-value normalization boundary.
-4. Keep genuinely different Blizzard UI ownership in the client layer.
-5. Preserve portable SavedVariables schema version `79`. Forever-specific
-   schema evolution uses its separate client revision.
-6. Treat `build/verify.py` contracts as architectural invariants.
-7. Verify and rebuild both clients after structural or runtime changes unless
-   a change is explicitly client-specific.
+### CurseForge app
 
-## Documentation
+Install TurboFace from the
+[CurseForge project page](https://www.curseforge.com/wow/addons/turboface),
+selecting the file for your client when available.
 
+### Manual installation
+
+1. Download the matching ZIP from
+   [GitHub Releases](https://github.com/Rumblecrush/TurboFace/releases/latest).
+2. Exit World of Warcraft.
+3. Extract the archive into the selected client's `Interface/AddOns` folder.
+4. Confirm the resulting path is `Interface/AddOns/TurboFace/TurboFace.toc`.
+5. Start the game and enable **TurboFace** on the AddOns screen.
+
+## Getting started
+
+- `/tf` or `/turboface` — open TurboFace Options.
+- `/tf move` or `/tfmove` — show mover handles and the alignment grid.
+- `/tf lock` — finish positioning and lock mover handles.
+- `/tfsplits` — manage or inspect speedrun splits.
+- `/tfgrocery` or `/tfshop` — open Grocery List commands.
+
+Profiles can be saved, switched, imported, and exported from the **Profile**
+tab. Options that alter Blizzard-owned or protected frames may require
+`/reload`; the relevant option sections identify those cases.
+
+## Classic Era and WoW Forever
+
+Both packages are built from the same shared feature source. Classic Era uses
+the official Classic UI architecture. WoW Forever uses a modernized UI with
+different protected-frame and secret-value rules, so its package includes
+dedicated compatibility and native-UI adapters.
+
+Forever is currently a beta game client. TurboFace supports its targeted
+Interface `16001` build, but client-side beta changes can require compatibility
+updates. Include the exact game build when reporting a Forever issue.
+
+Forever players affected by the client's SavedVariables loading bug should see
+the [SavedVariables workaround](docs/forever/FOREVER_SAVEDVARIABLES_WORKAROUND.md).
+
+## Bug reports and support
+
+- [Report a bug or request a feature](https://github.com/Rumblecrush/TurboFace/issues/new/choose)
+- [Join the TurboFace Discord](https://discord.gg/apZzz38M9)
+- [View the CurseForge project](https://www.curseforge.com/wow/addons/turboface)
+
+For bugs, include the client, TurboFace version, exact game build, reproduction
+steps, and the full Lua error if one appears.
+
+## Credits and third-party software
+
+TurboFace is developed and maintained by **Rumblecrush**. It includes or adapts
+third-party software and data under their respective licenses. See
+[Third-Party Notices](THIRD_PARTY_NOTICES.md) for sources, scope, attribution,
+and license locations.
+
+## License
+
+TurboFace's original material is All Rights Reserved. Official releases may be
+downloaded for personal use with World of Warcraft; redistribution and modified
+distribution require prior written permission. See the [license](LICENSE) for
+the complete terms.
+
+## Developer documentation
+
+Development and release material is intentionally kept out of the player-facing
+sections above:
+
+- [Contributing](CONTRIBUTING.md)
+- [Development guide](docs/DEVELOPMENT.md)
+- [Release guide](docs/RELEASING.md)
 - [Multi-client strategy](docs/MULTICLIENT_STRATEGY.md)
-- [Current source map](docs/SOURCE_MAP.md)
+- [Source map](docs/SOURCE_MAP.md)
 - [Classic architecture](docs/classic/ARCHITECTURE.md)
 - [Forever architecture](docs/forever/ARCHITECTURE.md)
 - [Classic changelog](docs/classic/CHANGELOG.md)
 - [Forever changelog](docs/forever/CHANGELOG.md)
-- [Forever SavedVariables workaround](docs/forever/FOREVER_SAVEDVARIABLES_WORKAROUND.md)
-
-## Release automation
-
-GitHub Actions verifies every push and pull request and retains both generated
-ZIPs as workflow artifacts. Pushing a version tag such as `v0.18.1` runs the
-same validation, creates a GitHub Release, and uploads the separate Classic and
-Forever ZIPs to CurseForge project `1689135`.
-
-Before publishing a tag, configure the `curseforge-production` GitHub
-environment with a secret named `CF_API_TOKEN`. The tag's version without the
-leading `v` must exactly match the Classic TOC version; the release stops before
-publishing if version metadata has drifted.
-
-The release workflow uploads only generated archives. Repository source,
-tests, build tools, and developer documentation are not included in the addon
-downloads. Source-only executable launchers that distribution platforms reject
-are also excluded from public addon archives.
-
-## License
-
-TurboFace's original material is All Rights Reserved. Personal use through
-authorized distribution pages is permitted; redistribution and modified
-distribution require prior written permission. See [LICENSE](LICENSE) for the
-complete terms.
-
-Bundled third-party components remain under their own licenses and notices.
-See the client notice files and [`src/common/Licenses/`](src/common/Licenses/).

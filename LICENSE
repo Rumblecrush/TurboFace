@@ -19,5 +19,6 @@ versions of TurboFace.
 TurboFace includes or adapts third-party components and data under their
 respective licenses. Those materials are excluded from the restrictions
 above and remain governed by the licenses and attribution requirements
-identified in THIRD_PARTY_NOTICES.md and the accompanying Licenses/
-directory.
+identified in the repository's THIRD_PARTY_NOTICES.md index, the client notice
+files under src/classic/ and src/forever/, and the license texts under
+src/common/Licenses/.

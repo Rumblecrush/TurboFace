@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: TurboFace Discord
+    url: https://discord.gg/apZzz38M9
+    about: Ask usage questions and get community support.
+  - name: CurseForge project
+    url: https://www.curseforge.com/wow/addons/turboface
+    about: Download the latest approved CurseForge release.
