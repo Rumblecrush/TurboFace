@@ -8,8 +8,8 @@ source tree; installable client packages are generated outputs.
 
 | Client | Interface | Package version |
 |---|---:|---|
-| WoW Classic Era | 11509 | 0.17.87 |
-| WoW Forever | 16001 | 0.17.87-ForeverPrep156-Forever69977 |
+| WoW Classic Era | 11509 | 0.18.0 |
+| WoW Forever | 16001 | 0.18.0 |
 
 ## Repository layout
 
@@ -78,7 +78,7 @@ the expected addon folder.
 ## Release automation
 
 GitHub Actions verifies every push and pull request and retains both generated
-ZIPs as workflow artifacts. Pushing a version tag such as `v0.17.87` runs the
+ZIPs as workflow artifacts. Pushing a version tag such as `v0.18.0` runs the
 same validation, creates a GitHub Release, and uploads the separate Classic and
 Forever ZIPs to CurseForge project `1689135`.
 
