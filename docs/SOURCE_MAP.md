@@ -2,9 +2,9 @@
 
 **Audit date:** 2026-09-23
 
-**Classic:** 0.17.87 / Interface 11509
+**Classic:** 0.18.0 / Interface 11509
 
-**Forever:** 0.17.87-ForeverPrep156-Forever69977 / Interface 16001
+**Forever:** 0.18.0 / Interface 16001
 
 This document describes the current physical source and package ownership. It
 is not a feature-parity matrix: one differing line can represent a critical

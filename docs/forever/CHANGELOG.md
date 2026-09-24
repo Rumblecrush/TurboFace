@@ -1,3 +1,13 @@
+# TurboFace Forever Changelog
+
+## 0.18.0 — first unified multi-client release
+
+- Published Forever alongside Classic from the unified layered source repository.
+- Retained Forever's protected-frame, secret-value, native Nameplate, Unit Frame, Trainer, Combat, and SavedVariables compatibility boundaries.
+- Replaced the internal Prep version in public package metadata with the shared TurboFace 0.18.0 product version.
+- Added verified GitHub Actions packaging and Forever-specific CurseForge delivery.
+- Portable SavedVariables remain at schema version 79; Forever-only evolution remains separately revisioned.
+
 ## 0.17.87-ForeverPrep156-Forever69977
 
 - Phase 33 repository hardening: restored regression tests, hardened destructive build output handling, removed stale packaged docs/manifests, eliminated the redundant shared Trainer client-identity check, and strengthened verification for documentation/ownership freshness. No gameplay feature change.

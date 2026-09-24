@@ -1,5 +1,12 @@
 # TurboFace Classic Changelog
 
+## 0.18.0 — first unified multi-client release
+
+- Published Classic and Forever from one layered source repository with separate installable packages.
+- Preserved Classic Era behavior while adopting shared compatibility hardening, provider boundaries, and regression coverage.
+- Added verified GitHub Actions packaging and separate CurseForge delivery for each supported client.
+- Portable SavedVariables remain at schema version 79.
+
 ## Unified multi-client baseline
 
 - Phase 33: repository-hardening baseline; restored regression tests, hardened destructive build output handling, removed stale packaged docs/manifests, eliminated the redundant shared Trainer client-identity check, and strengthened verification for documentation/ownership freshness.

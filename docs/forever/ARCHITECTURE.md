@@ -1,12 +1,12 @@
 # TurboFace Forever Architecture
 
 **Last updated:** 2026-09-23  
-**Current fork version:** 0.17.87-ForeverPrep156-Forever69977
+**Current addon version:** 0.18.0
 **Target client:** World of Warcraft Forever beta 1.60.1, Interface 16001, project 1  
 **Observed beta build:** 69977  
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace Classic Era 0.17.87  
+**Source baseline:** TurboFace unified 0.18.0
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.

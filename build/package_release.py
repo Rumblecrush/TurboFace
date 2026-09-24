@@ -54,6 +54,9 @@ def main() -> None:
             raise SystemExit(
                 f"Forever TOC version {forever_version!r} does not share release version {release_version!r}"
             )
+        release_notes = ROOT / "docs" / "releases" / f"{release_version}.md"
+        if args.version and not release_notes.is_file():
+            raise SystemExit(f"missing tagged release notes: {release_notes}")
 
         output = args.out.expanduser().resolve()
         classic_archive = output / f"TurboFace-Classic-{classic_version}.zip"
