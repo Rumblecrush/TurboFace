@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
-    def test_forever_fallback_matches_promoted_live_defaults(self) -> None:
+    def test_forever_defaults_match_promoted_live_configuration(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the Forever preset contract")
         harness = r'''
@@ -35,9 +35,9 @@ assert(loadfile("src/common/Core/Schema.lua"))("TurboFace", ns)
 assert(loadfile("src/forever/Core/ForeverSchema.lua"))("TurboFace", ns)
 assert(loadfile("src/common/Core/Defaults.lua"))("TurboFace", ns)
 assert(loadfile("src/common/Core/Profiles.lua"))("TurboFace", ns)
-assert(loadfile("src/forever/Core/ForeverDevPreset.lua"))("TurboFace", ns)
+assert(loadfile("src/forever/Core/ForeverDefaults.lua"))("TurboFace", ns)
 
-local data = ns.ForeverDevPreset:BuildData()
+local data = ns.defaults
 local modules = data.modules
 assert(modules.unitframes.enabled == false)
 assert(modules.nameplates.enabled == true)

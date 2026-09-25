@@ -46,9 +46,6 @@ Libs\LibProfessionDB\Data\Vanilla\enUS\Leatherworking.lua
 Libs\LibProfessionDB\Data\Vanilla\enUS\Mining.lua
 Libs\LibProfessionDB\Data\Vanilla\enUS\Tailoring.lua
 
-# Generated/manual SavedVariables restore snapshot. Must load before every
-# consumer, including Compatibility.lua and feature files with file-scope DB use.
-Core\ForeverRestoreData.lua
 Core\Compat.lua
 Core\Compatibility.lua
 Core\Client.lua
@@ -63,7 +60,9 @@ Core\Debug.lua
 Core\CVarBrowser.lua
 Core\CPUProfiler.lua
 Core\Profiles.lua
-Core\ForeverDevPreset.lua
+# Forever-only product defaults overlay the portable baseline after presets
+# are registered and before login-time SavedVariables migration/default merge.
+Core\ForeverDefaults.lua
 Core\SharedMedia.lua
 Nameplates\Provider.lua
 Nameplates\TurboDebuffs.lua

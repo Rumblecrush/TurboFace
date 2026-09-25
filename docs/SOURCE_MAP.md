@@ -1,6 +1,6 @@
 # TurboFace source map
 
-**Audit date:** 2026-09-23
+**Audit date:** 2026-09-25
 
 **Classic:** 0.18.1 / Interface 11509
 
@@ -15,19 +15,15 @@ protected-frame or secret-value boundary.
 | Class | Count |
 |---|---:|
 | Classic packaged files | 182 |
-| Forever packaged files | 198 |
+| Forever packaged files | 194 |
 | Same relative path | 181 |
 | Byte-identical same-path files | 176 |
 | Same-path but different contents | 5 |
 | Classic-only paths | 1 |
-| Forever-only paths | 17 |
+| Forever-only paths | 13 |
 
-The union is 199 relative paths. Generated packages are the exact overlay of
+The union is 195 relative paths. Generated packages are the exact overlay of
 `src/common/` with `src/classic/` or `src/forever/`.
-
-Public release archives apply one distribution-only exclusion:
-`Save-TurboFaceForever.bat` remains in the Forever source/build tree for local
-development but is omitted from ZIPs because CurseForge rejects batch files.
 
 ## First-party source
 
@@ -67,22 +63,18 @@ Classic has one exclusive packaged path:
 
 - `Textures/BankIcon.tga`
 
-Forever has seventeen exclusive packaged paths:
+Forever has thirteen exclusive packaged paths:
 
 - `Combat/BlizzardDamageMeterBridge.lua`
 - `Combat/ForeverNativeAdapter.lua`
 - `Combat/ForeverSwingTimerAdapter.lua`
 - `Core/Compatibility.lua`
-- `Core/ForeverDevPreset.lua`
-- `Core/ForeverRestoreData.lua`
+- `Core/ForeverDefaults.lua`
 - `Core/ForeverSchema.lua`
 - `Nameplates/ForeverAuras.lua`
 - `Nameplates/ForeverNativeAdapter.lua`
 - `Plus/ForeverNativeAdapter.lua`
-- `Save-TurboFaceForever.bat`
-- `Save-TurboFaceForever.sh`
 - `SpendTalentPoint.lua`
-- `Tools/Save-ForeverVariables.ps1`
 - `Trainer/ForeverNativeAdapter.lua`
 - `Trainer/data/ForeverProfessions.lua`
 - `UnitFrames/ForeverNativeAdapter.lua`

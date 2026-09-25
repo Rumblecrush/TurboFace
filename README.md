@@ -111,9 +111,6 @@ Forever is currently a beta game client. TurboFace supports its targeted
 Interface `16001` build, but client-side beta changes can require compatibility
 updates. Include the exact game build when reporting a Forever issue.
 
-Forever players affected by the client's SavedVariables loading bug should see
-the [SavedVariables workaround](docs/forever/FOREVER_SAVEDVARIABLES_WORKAROUND.md).
-
 ## Bug reports and support
 
 - [Report a bug or request a feature](https://github.com/Rumblecrush/TurboFace/issues/new/choose)

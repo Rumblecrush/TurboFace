@@ -4415,10 +4415,10 @@ behind `Core/Compat.lua`. The shared Core does not inspect Forever/build identit
 
 ### Prep150 / Phase 27 — shared Quick Setup persistence and action placement
 
-`QuickSetup.lua` is now physically common. Client-specific persistence and action semantics are policy,
-not forks: Classic keeps reload-bound SavedVariables/manual apply and legacy macro indexing; Forever keeps
-immediate staged apply, external save-helper persistence, normalized macro limits/scope resolution,
-reload-free CVar baselines, one-based Edit Mode translation, and fail-safe unsupported-action preservation.
+`QuickSetup.lua` is now physically common. Client-specific action semantics are policy, not forks: Classic
+keeps manual apply and legacy macro indexing; Forever keeps immediate staged apply, normalized macro
+limits/scope resolution, reload-free CVar baselines, one-based Edit Mode translation, and fail-safe
+unsupported-action preservation. Both clients use Blizzard's normal SavedVariables lifecycle.
 The shared engine does not branch on Forever identity.
 
 

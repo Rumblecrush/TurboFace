@@ -26,15 +26,9 @@ python3 build/package_release.py --version <version>
 Inspect both ZIPs before tagging. They must:
 
 - contain exactly one top-level `TurboFace/` directory;
-- match the applicable generated client package, subject only to verified
-  distribution exclusions;
+- match the applicable generated client package exactly;
 - contain no `.bat` launcher files;
 - carry matching TOC and archive versions.
-
-The Forever batch launcher remains available in the source tree for local
-development, but CurseForge rejects batch files inside addon archives. Windows
-release users invoke `Tools/Save-ForeverVariables.ps1` directly when they need
-the Forever SavedVariables workaround.
 
 ## Publish
 

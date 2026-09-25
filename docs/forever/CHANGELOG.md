@@ -2,10 +2,12 @@
 
 ## Unreleased — promoted live Forever defaults
 
-- Promoted the current live 1.60.1 account configuration into the client-owned hardcoded fallback used when no valid restore snapshot exists.
+- Retired the beta SavedVariables workaround after the client began reliably loading normal addon SavedVariables.
+- Removed the generated restore payload, login-time database replacement, shell/batch/PowerShell snapshot tools, workaround documentation, and workaround diagnostics.
+- Promoted the current live 1.60.1 account configuration into `Core/ForeverDefaults.lua`, a normal client-owned defaults overlay that never replaces stored user values.
 - Enabled detached-safe Nameplates and Hotbar Power while retaining the parked Unit Frame, Aura, Cast Bar, Class, and Swing Timer families.
 - Captured the current Combined Bag anchor, mover positions/visibility, selected QoL section state, Quick Setup choice, weather density, and small visual tunings.
-- Kept trainer observations, speedrun history, caches, profiles, and per-character data outside the preset. Classic and portable schema version 79 are unchanged.
+- Kept trainer observations, speedrun history, caches, profiles, and per-character data outside the defaults overlay. Classic and portable schema version 79 are unchanged.
 
 ## 0.18.1 — CurseForge packaging correction
 

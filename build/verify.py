@@ -450,6 +450,29 @@ def main() -> None:
     if (ROOT / "src" / "classic" / "Core" / "ForeverSchema.lua").exists():
         raise SystemExit("Classic must not ship the Forever schema extension")
 
+    retired_forever_workaround = (
+        "src/forever/Core/ForeverRestoreData.lua",
+        "src/forever/Core/ForeverDevPreset.lua",
+        "src/forever/Save-TurboFaceForever.bat",
+        "src/forever/Save-TurboFaceForever.sh",
+        "src/forever/Tools/Save-ForeverVariables.ps1",
+        "docs/forever/FOREVER_SAVEDVARIABLES_WORKAROUND.md",
+    )
+    for rel in retired_forever_workaround:
+        if (ROOT / rel).exists():
+            raise SystemExit(f"retired Forever SavedVariables workaround returned: {rel}")
+
+    retired_runtime_markers = (
+        "ForeverDevPreset",
+        "ForeverRestoreData",
+        "TurboFaceForeverRestoreMeta",
+    )
+    for rel in ("src/common/Core.lua", "src/common/Core/Debug.lua", "src/forever/TurboFace.toc"):
+        text = (ROOT / rel).read_text(errors="replace")
+        for marker in retired_runtime_markers:
+            if marker in text:
+                raise SystemExit(f"retired Forever restore marker remains in {rel}: {marker}")
+
     # Shared policy must not regress into direct Forever build checks. Client
     # ownership is expressed through Core/Client.lua and provider registration.
     for rel in ("Combat/CombatMeter.lua", "Combat/DPSBadge.lua", "Movers/Movers.lua", "Movers/Systems.lua"):
@@ -677,8 +700,8 @@ def main() -> None:
         "**Forever:** 0.18.1 / Interface 16001",
         "| Byte-identical same-path files | 176 |",
         "| Same-path but different contents | 5 |",
-        "| Forever-only paths | 17 |",
-        "The union is 199 relative paths.",
+        "| Forever-only paths | 13 |",
+        "The union is 195 relative paths.",
         "| Byte-identical | 107 |",
     ):
         if marker not in source_map:
@@ -706,7 +729,7 @@ def main() -> None:
     forever_package = merged_expected("forever")
     same_package_paths = set(classic_package) & set(forever_package)
     identical_package_paths = {rel for rel in same_package_paths if classic_package[rel] == forever_package[rel]}
-    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 198, 181, 176):
+    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 194, 181, 176):
         raise SystemExit(
             "package inventory contract drifted: "
             f"classic={len(classic_package)} forever={len(forever_package)} "

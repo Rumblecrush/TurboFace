@@ -154,11 +154,11 @@ TurboFace must not work around secret APIs by scraping protected native text, me
 `TurboFace.toc` defines source order. The current high-level sequence is:
 
 1. Embedded libraries and Classic profession catalog data.
-2. `Core/ForeverRestoreData.lua` before every SavedVariables consumer.
-3. `Core/Compat.lua`, `Core/Compatibility.lua`, `Core/Client.lua`, `Core/Providers.lua`, shared
+2. `Core/Compat.lua`, `Core/Compatibility.lua`, `Core/Client.lua`, `Core/Providers.lua`, shared
    `Core/Schema.lua`, then `Core/Config.lua`.
-4. `Core/ForeverSchema.lua` registers Forever-only defaults/migrations before shared
-   `Core/Defaults.lua` / `Core/Migrations.lua` / `Core/Profiles.lua` consume the schema contract.
+3. `Core/ForeverSchema.lua` registers Forever-only schema evolution before shared
+   `Core/Defaults.lua` / `Core/Migrations.lua` / `Core/Profiles.lua` consume the contract.
+4. `Core/ForeverDefaults.lua` overlays client product defaults after shared presets are registered.
 5. Neutral metadata and shared prediction engines.
 6. Classic-compatible feature implementations.
 7. Forever adapters loaded after the shared owners they augment or replace.
@@ -181,7 +181,7 @@ This is acceptable during the port, but it is not the preferred final multi-clie
 
 ---
 
-## 4. Saved variables and beta restore ownership
+## 4. Saved variables and client default ownership
 
 The Forever TOC declares:
 
@@ -216,28 +216,22 @@ SavedVariables bookkeeping only and is excluded from named profiles / `TF1:` exp
 - `Core/Profiles.lua` owns named profiles/import/export.
 - Trainer, Speedrun, and per-character data remain separated from the main configuration root as in Classic.
 
-### 4.2 Forever beta SavedVariables workaround
+### 4.2 Forever product defaults
 
-The current beta has exhibited unreliable SavedVariables reload behavior. TurboFace therefore has a development-only restore path:
+Forever now persists ordinary addon SavedVariables reliably. There is no
+preloaded restore payload or login-time database replacement. Blizzard's normal
+SavedVariables lifecycle is authoritative.
 
-```text
-Core/ForeverRestoreData.lua
-Core/ForeverDevPreset.lua
-FOREVER_SAVEDVARIABLES_WORKAROUND.md
-```
-
-The generated restore snapshot must load before any consumer that can read `TurboFaceDB` at file scope. When a valid restore payload is present, it is authoritative for that login. When no valid payload exists, the hardcoded Dev Preset supplies a deterministic testing baseline.
-
-The hardcoded fallback mirrors the promoted live Forever configuration: Unit
+`Core/ForeverDefaults.lua` mirrors the promoted live Forever configuration: Unit
 Frames, Auras, Cast Bars, Class helpers, and Swing Timers remain parked;
 detached-safe Nameplates, Hotbar Power, Player Ticks, selected QoL sections,
 Quick Setup, leveling/inventory widgets, and the recorded mover layout start
-enabled. The preset contains configuration only and must never absorb cache,
+enabled. The overlay contains configuration only and must never absorb cache,
 trainer, speedrun, profile-library, or per-character state.
 
-This workaround is **not** the desired release architecture and must never become a second feature-gating system. Normal module/feature Options remain the runtime gates after initialization.
-
-The packaged source-tree `Core/ForeverRestoreData.lua` must remain inert. Development installations may deliberately replace the live copy with an external generated snapshot, but release packaging must never accidentally ship that private active snapshot.
+The overlay modifies `ns.defaults` before login-time migrations/default merging.
+Stored user values therefore remain authoritative; the promoted configuration
+applies only where no value has been saved.
 
 ### 4.3 Cache invalidation
 
@@ -323,7 +317,7 @@ Validation states are:
 
 | Area | Forever state | Architectural owner |
 |---|---|---|
-| Core config/profiles/gates | Shared + beta restore workaround | `Core/*` |
+| Core config/profiles/gates | Shared + Forever defaults overlay | `Core/*` |
 | Inventory / Bank / Grocery / Net Worth / Bag Slots | Mostly shared/adapted | `Inventory/*` |
 | Experience Bar / Speedrun Splits / Loot / FPS / Hearthstone | Mostly shared | root HUD files |
 | Movers | Shared for addon-owned surfaces; protected-native caveats remain | `Movers/*` |
@@ -424,8 +418,7 @@ TurboFaceForever/
 Forever-specific implementation files currently include:
 
 ```text
-Core/ForeverDevPreset.lua
-Core/ForeverRestoreData.lua
+Core/ForeverDefaults.lua
 Nameplates/ForeverNativeAdapter.lua
 Nameplates/ForeverAuras.lua
 Plus/ForeverNativeAdapter.lua
@@ -927,7 +920,7 @@ The Spend Talent Point reminder is Speedrun/HUD-owned rather than a ClassBuff de
 
 Lvl1 Quick Setup remains a high-risk subsystem because macros, bindings, action slots, Edit Mode, and protected bar state cross secure boundaries.
 
-Forever macro/action restore must use the modern action-slot scope and refuse unsafe/destructive cleanup when identity is uncertain. It must never use the SavedVariables workaround as an excuse to mutate protected action state during combat.
+Forever macro/action restore must use the modern action-slot scope and refuse unsafe/destructive cleanup when identity is uncertain. It must never mutate protected action state during combat.
 
 Quick Setup should remain one of the last systems revalidated after a client update.
 
@@ -1092,7 +1085,7 @@ Every build should verify at least:
 - XML/media references exist;
 - no protected Blizzard action button/nameplate/unit-frame fields are used as TurboFace state storage;
 - Forever adapter files load after their shared owners;
-- the packaged restore snapshot is inert;
+- Forever defaults never replace a loaded SavedVariables database;
 - version strings agree across package/docs/contracts;
 - client-specific blocked features cannot accidentally initialize their Classic renderer;
 - `ns.PLUS_SECTION` remains synchronized with current Plus defaults;
@@ -1100,14 +1093,12 @@ Every build should verify at least:
 
 The repository's Forever validation suite remains the authoritative automated contract when available.
 
-### 24.2 Restore snapshot safety
+### 24.2 SavedVariables persistence
 
-Release packaging must distinguish:
-
-1. the inert packaged `Core/ForeverRestoreData.lua`; and
-2. the intentionally active developer live-install snapshot.
-
-A build/install script must never overwrite the active developer snapshot unless that is the explicit operation being performed. After any live install, verify the expected active snapshot hash.
+Forever uses Blizzard's normal account-wide and per-character SavedVariables
+files. Release packages contain no generated settings payload, recovery script,
+or login-time fallback database. Defaults must be configuration-only and must
+not overwrite values loaded from SavedVariables.
 
 ### 24.3 Live client matrix
 
@@ -1125,7 +1116,7 @@ At minimum, validate:
 - Trainer queue identity across multiple ranks;
 - profession Training with modern `C_TradeSkillUI` learned/skill state;
 - Minimap/Map features that touch modern Blizzard UI;
-- profile/restore behavior under the current beta SavedVariables limitation.
+- profile save/load/import/export and persistence across logout, login, and `/reload`.
 
 Do not call a feature port complete based only on syntax or a clean login.
 
@@ -1276,9 +1267,12 @@ Some Classic features may never be reproducible with equivalent fidelity if Bliz
 
 Forever increasingly uses protected/pool-managed modern FrameXML. A child frame that appears harmless out of combat can taint a later Blizzard secret-value path. Detached ownership is the default when the safety of native parenting is uncertain.
 
-### 26.3 Beta SavedVariables workaround is temporary debt
+### 26.3 SavedVariables workaround retired
 
-`ForeverRestoreData.lua` / Dev Preset exist because of observed beta behavior. They should be removed or retired as soon as the client reliably persists SavedVariables; they are not part of the desired long-term product model.
+The beta restore payload, hardcoded login fallback, and external snapshot
+scripts were removed after the client began reliably loading SavedVariables.
+Do not reintroduce a second persistence path; diagnose future client regressions
+at the compatibility boundary while preserving Blizzard's normal ownership.
 
 ### 26.4 Capability ownership
 
@@ -1366,10 +1360,10 @@ behind `Core/Compat.lua`. The shared Core does not inspect Forever/build identit
 
 ### Prep150 / Phase 27 — shared Quick Setup persistence and action placement
 
-`QuickSetup.lua` is now physically common. Client-specific persistence and action semantics are policy,
-not forks: Classic keeps reload-bound SavedVariables/manual apply and legacy macro indexing; Forever keeps
-immediate staged apply, external save-helper persistence, normalized macro limits/scope resolution,
-reload-free CVar baselines, one-based Edit Mode translation, and fail-safe unsupported-action preservation.
+`QuickSetup.lua` is now physically common. Client-specific action semantics are policy, not forks: Classic
+keeps manual apply and legacy macro indexing; Forever keeps immediate staged apply, normalized macro
+limits/scope resolution, reload-free CVar baselines, one-based Edit Mode translation, and fail-safe
+unsupported-action preservation. Both clients use Blizzard's normal SavedVariables lifecycle.
 The shared engine does not branch on Forever identity.
 
 
