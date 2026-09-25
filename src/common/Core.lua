@@ -1105,13 +1105,6 @@ end
 
 Core:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        -- Forever beta 69913 currently does not reliably reload addon
-        -- SavedVariables. A deliberate external snapshot is preloaded by the
-        -- TOC when present; otherwise this call supplies the code-defined
-        -- development fallback. Runtime gates remain normal Options values.
-        if ns.ForeverDevPreset and ns.ForeverDevPreset.ApplyAtLogin then
-            ns.ForeverDevPreset:ApplyAtLogin()
-        end
         ns:LoadVariables()  -- Also calls UpdateDBCache() at the end (sets ns.c_* cache)
         if ns.Compat and ns.Compat.OnLogin then ns.Compat:OnLogin() end
         local SafeCall = ns.CompatSafeCall or ns.SafeCall

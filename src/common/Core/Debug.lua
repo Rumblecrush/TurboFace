@@ -258,15 +258,6 @@ function Debug:ModuleReport()
     end
 
     C("=== TurboFace effective module state ===")
-    if ns.ForeverDevPreset and ns.ForeverDevPreset.GetDiagnostics then
-        local p = ns.ForeverDevPreset:GetDiagnostics()
-        if p.active then
-            C(("Forever settings source: restored=%s generated=%s fallbackApplied=%s count=%d name=%s base=%s schema=%s"):format(
-                tostring(p.restored), tostring(p.restoreGeneratedAt or "none"),
-                tostring(p.applied), tonumber(p.applyCount) or 0, tostring(p.name),
-                tostring(p.base), tostring(p.schemaVersion)))
-        end
-    end
     C(("Unit Frames %s  player=%s target=%s ToT=%s party=%s pet=%s"):format(
         EnabledWord(Gate("unitframes")),
         EnabledWord(Gate("unitframes", "player")),
