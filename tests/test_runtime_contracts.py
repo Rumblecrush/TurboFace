@@ -11,6 +11,41 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_forever_development_restrictions_and_bypass(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the client-policy contract")
+        harness = r'''
+local ns = { Compat = { IS_TARGET_FOREVER_BUILD = true } }
+TurboFaceCompatDB = {}
+WOW_PROJECT_ID = 1
+function GetBuildInfo() return "1.60.1", "test", "", 16001 end
+
+assert(loadfile("src/common/Core/Client.lua"))("TurboFace", ns)
+local client = ns.Client
+assert(client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
+assert(client:IsSettingDevelopmentRestricted("healPredictionEnabled"))
+assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCNameTitleOnly"))
+assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyPlayerDamagedOnly"))
+assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCDamagedOnly"))
+assert(client:IsGateDevelopmentRestricted("unitframes"))
+assert(client:IsGateDevelopmentRestricted("class"))
+assert(not client:IsDevBypassActive())
+
+assert(client:SetDevBypass(true))
+assert(TurboFaceCompatDB.devFeatureBypass == true)
+assert(not client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
+assert(not client:IsGateDevelopmentRestricted("unitframes"))
+assert(not client:IsGateDevelopmentRestricted("class"))
+
+assert(not client:SetDevBypass(false))
+assert(TurboFaceCompatDB.devFeatureBypass == nil)
+assert(client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_forever_defaults_match_promoted_live_configuration(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the Forever preset contract")

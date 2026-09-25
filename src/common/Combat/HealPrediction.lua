@@ -163,6 +163,10 @@ local ZERO_PREDICTION = {
 local DB = ns.DB   -- shared root accessor (Config.lua)
 
 local function Enabled()
+    if ns.Client and ns.Client.IsSettingDevelopmentRestricted
+        and ns.Client:IsSettingDevelopmentRestricted("healPredictionEnabled") then
+        return false
+    end
     return DB().healPredictionEnabled == true
         and (not ns.caps or ns.caps.healPrediction ~= false)
         and type(UnitGetIncomingHeals) == "function"

@@ -79,6 +79,59 @@ function Client:GetOptionPolicy(key)
     return self.optionPolicy and self.optionPolicy[key]
 end
 
+-- Development restrictions keep known-incomplete Forever surfaces visible in
+-- Options without presenting them as supported. The bypass is deliberately
+-- stored outside portable profiles so enabling a test path never changes what
+-- another client sees after importing the same profile.
+Client.DEVELOPMENT_DISABLED_TOOLTIP = "This feature is currently disabled on Forever"
+Client.developmentRestrictedSettings = isForever and {
+    ["dotPredictionEnabled"] = "global.dotPrediction",
+    ["healPredictionEnabled"] = "global.healPrediction",
+    ["bubbleNameplates.friendlyNPCNameTitleOnly"] = "nameplates.friendlyNPCTitle",
+    ["bubbleNameplates.friendlyPlayerDamagedOnly"] = "nameplates.friendlyPlayerDamagedOnly",
+    ["bubbleNameplates.friendlyNPCDamagedOnly"] = "nameplates.friendlyNPCDamagedOnly",
+} or {}
+Client.developmentRestrictedGates = isForever and {
+    unitframes = "unitframes.master",
+    class = "class.master",
+} or {}
+
+function Client:IsDevBypassActive()
+    return self.isForever == true
+        and type(TurboFaceCompatDB) == "table"
+        and TurboFaceCompatDB.devFeatureBypass == true
+end
+
+function Client:SetDevBypass(active)
+    if not self.isForever then return false end
+    TurboFaceCompatDB = type(TurboFaceCompatDB) == "table" and TurboFaceCompatDB or {}
+    TurboFaceCompatDB.devFeatureBypass = active == true or nil
+    return self:IsDevBypassActive()
+end
+
+function Client:GetSettingDevelopmentRestriction(path)
+    return type(path) == "string" and self.developmentRestrictedSettings[path] or nil
+end
+
+function Client:GetGateDevelopmentRestriction(family)
+    if type(family) == "table" and family.dbKey then
+        return self:GetSettingDevelopmentRestriction(family.dbKey)
+    end
+    return type(family) == "string" and self.developmentRestrictedGates[family] or nil
+end
+
+function Client:IsDevelopmentRestrictionActive(key)
+    return key ~= nil and self.isForever == true and not self:IsDevBypassActive()
+end
+
+function Client:IsSettingDevelopmentRestricted(path)
+    return self:IsDevelopmentRestrictionActive(self:GetSettingDevelopmentRestriction(path))
+end
+
+function Client:IsGateDevelopmentRestricted(family)
+    return self:IsDevelopmentRestrictionActive(self:GetGateDevelopmentRestriction(family))
+end
+
 -- Core runtime policy isolates lifecycle/ownership differences that cannot be
 -- inferred safely from API presence alone. Shared Core.lua consumes these
 -- capabilities rather than branching on client/build identity.
@@ -90,6 +143,7 @@ Client.corePolicy = {
     installNativeDriverAddedHook = not isForever,
     combatMeterBeforeBadge = isForever,
     extendedDiagnostics = isForever,
+    developmentFeatureBypass = isForever,
 }
 
 function Client:GetCorePolicy(key)

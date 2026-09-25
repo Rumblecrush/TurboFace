@@ -1,12 +1,12 @@
 # TurboFace Forever Architecture
 
 **Last updated:** 2026-09-23  
-**Current addon version:** 0.18.1
+**Current addon version:** 0.18.2
 **Target client:** World of Warcraft Forever beta 1.60.1, Interface 16001, project 1  
 **Observed beta build:** 69977  
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.18.1
+**Source baseline:** TurboFace unified 0.18.2
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -21,7 +21,7 @@ These rules are load-bearing. A feature port is not complete merely because it r
 
 - **Secret values are opaque.** Never compare, divide, round, format, concatenate, stringify, table-key, or otherwise inspect a value after `ns.API.IsSecretValue()` / `ns.API.CanAccessValue()` says it is unavailable. Opaque values may be passed only through specifically verified Blizzard/UI sinks.
 - **Blizzard is the substrate owner.** On Forever, TurboFace augments modern Blizzard UI rather than replacing protected unit/nameplate systems or taking ownership of secret-driven StatusBars.
-- **Addon visuals are detached when native ownership is risky.** A `UIParent`-owned TurboFace frame may use a Blizzard region as a write-only anchor. It must not become a child of a protected/pool-managed Blizzard object merely for convenience.
+- **Addon visuals are detached when native ownership is risky.** A TurboFace-owned frame under `WorldFrame` or `UIParent` may use a Blizzard region as a write-only anchor. It must not become a child of a protected/pool-managed Blizzard object merely for convenience.
 - **Native Blizzard objects are not addon state containers.** Do not write `_tf*` fields onto Blizzard action buttons, CompactUnitFrames, health bars, pooled aura buttons, or similar native objects. Use addon-owned side tables, preferably weak-key tables when the native object identity is the lookup key.
 - **Protected geometry is out-of-combat work.** Changes to protected frame geometry are deferred until combat ends unless the live client explicitly proves the operation legal.
 - **Native event callbacks are read/queue boundaries.** When Blizzard may continue into secret/protected code on the same execution path, TurboFace defers its own visual mutation to a later callback instead of mutating synchronously inside the native event/hook stack.
@@ -505,7 +505,7 @@ logic remain shared; native frame ownership remains in the selected client provi
 
 ### 9.3 `Nameplates/ForeverNativeAdapter.lua`
 
-The Forever adapter owns the safe augmented path. It keeps per-plate state outside Blizzard frames and uses `UIParent`-owned overlays.
+The Forever adapter owns the safe augmented path. It keeps per-plate state outside Blizzard frames and uses addon-owned `UIParent` overlays whose strata/level mirror the native nameplate root, allowing ordinary interface panels to occlude both without changing the overlay's established scale domain.
 
 Current safe/adapted surfaces include, subject to their own live capabilities:
 
@@ -513,6 +513,7 @@ Current safe/adapted surfaces include, subject to their own live capabilities:
 - combo presentation;
 - friendly NPC title/job information;
 - detached health text;
+- detached overlapping power fill using native curve evaluation;
 - stable-alias threat percentage and Aggro Audio when readable;
 - enemy swing presentation;
 - detached Blizzard-owned aura rows.
@@ -533,7 +534,33 @@ Whole-nameplate and fill-only centering use known anchor identities rather than 
 
 Blizzard's Forever nameplate name already owns its shadow. TurboFace does not create the Classic name-shadow amendment on Forever, and the corresponding option is hidden there.
 
-### 9.7 Unsupported native-mutation features
+### 9.7 Detached overlapping power fill
+
+Forever does not run the Classic embedded-power renderer because that implementation creates
+textures and state on Blizzard's native health bar. The Forever adapter instead owns a detached
+`StatusBar` under its detached `UIParent` overlay and uses the native health bar only as a write-only
+left/right anchor.
+
+Current power never enters Lua arithmetic. `UnitPowerPercent(unit, powerType, false, identityCurve)`
+normalizes the opaque value inside Blizzard code, and the untouched curve result flows directly to
+the proven `StatusBar:SetValue` sink. Power type remains readable for ordinary color selection. The
+height option maps to a fixed one-to-four-pixel detached band rather than measuring or resizing the
+native health bar. If the curve evaluator or StatusBar sink rejects a plate, the augmentation hides
+and records only an ordinary success/failure diagnostic.
+
+This path remains **prepared pending live validation** across combat, power-type changes, and pooled
+plate reuse. It must not be described as live-validated until those checks pass without taint or
+forbidden-action errors.
+
+The overlay copies the native root's ordinary frame strata/level while remaining outside its
+protected hierarchy. This keeps it in the same presentation plane as the nameplate instead of above
+interface panels. A separate addon-owned health-text holder sits one frame level above the detached
+power `StatusBar`, making the number's foreground ordering explicit. One shared 20 Hz cadence client
+also mirrors only the root's ordinary `IsVisible()` and effective alpha. It installs no hooks or
+per-plate `OnUpdate`, mutates no native object, and fails closed if either presentation query is
+unavailable.
+
+### 9.8 Unsupported native-mutation features
 
 Features that require unsafe mutation of Blizzard pooled internals remain reduced/dormant until a detached or native-owned strategy exists. Examples have included native rarity relocation, friendly damaged-only chassis suppression, native power-bar overlap/height manipulation, and some reactive class indicators.
 
@@ -1022,6 +1049,18 @@ Forever-specific rules:
 - do not leave a visible working-looking checkbox that can only route into a blocked Classic renderer;
 - module toggles that have a fully reversible detached Forever lifecycle may refresh live;
 - protected/hook-heavy changes may still require `/reload`.
+
+Known-incomplete controls remain visible but disabled with the tooltip **This feature is currently
+disabled on Forever**. This currently covers Global DoT/Heal Prediction; the three deferred
+Nameplate identity/damaged-only controls; and the Unit Frames and Class Features masters. The
+restriction is a `Core/Client.lua` policy consumed by both Options and effective runtime gates, so a
+portable profile cannot activate the blocked path merely because its stored checkbox is true.
+
+`/tf dev bypass` toggles the Forever-only developer override. The override is stored in
+`TurboFaceCompatDB`, outside portable profiles, so it survives the `/reload` required by protected
+test paths without changing user configuration or Classic behavior. `/tf dev bypass on|off|status`
+provides explicit control. This is a testing escape hatch, not a claim that a blocked implementation
+is safe; deeper provider/secret-value guards remain authoritative.
 
 Prep124 begins that migration. Existing Forever-specific availability for the native name shadow,
 World Map canvas enhancements, and legacy Combat Meter window now reads the client registry instead

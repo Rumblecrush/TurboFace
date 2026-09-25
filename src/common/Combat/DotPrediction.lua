@@ -88,6 +88,10 @@ local DB = ns.DB   -- shared root accessor (Config.lua)
 local PvPHealth = ns.PvPHealthEstimate
 
 local function Enabled()
+    if ns.Client and ns.Client.IsSettingDevelopmentRestricted
+        and ns.Client:IsSettingDevelopmentRestricted("dotPredictionEnabled") then
+        return false
+    end
     return DB().dotPredictionEnabled == true
 end
 

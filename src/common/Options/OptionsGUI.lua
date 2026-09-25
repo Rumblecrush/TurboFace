@@ -36,6 +36,21 @@ local function ClientFeatureAvailable(key, fallback)
     return fallback == true
 end
 
+local function SettingDevelopmentRestriction(path)
+    return Client and Client.GetSettingDevelopmentRestriction
+        and Client:GetSettingDevelopmentRestriction(path) or nil
+end
+
+local function GateDevelopmentRestriction(family)
+    return Client and Client.GetGateDevelopmentRestriction
+        and Client:GetGateDevelopmentRestriction(family) or nil
+end
+
+local function DevelopmentRestrictionActive(key)
+    return Client and Client.IsDevelopmentRestrictionActive
+        and Client:IsDevelopmentRestrictionActive(key) or false
+end
+
 -- Only one custom options dropdown may be open at a time.  Keeping this
 -- manager local to the GUI avoids coupling these lightweight menus to
 -- Blizzard's dropdown implementation.
@@ -361,6 +376,10 @@ local function GateIsDBKey(family) return type(family) == "table" and family.dbK
 
 local function GateEnabled(family, element)
     if not family then return true end
+    if Client and Client.IsGateDevelopmentRestricted
+        and Client:IsGateDevelopmentRestricted(family) then
+        return false
+    end
     if GateIsDBKey(family) then
         local v = GetOptionValue(family.dbKey)
         return v == true or v == 1
@@ -560,6 +579,82 @@ local function UpdateSectionLayout(c)
     end
 end
 
+local developmentRestrictedControls = {}
+
+local function RefreshDevelopmentRestrictedControl(entry)
+    local restricted = DevelopmentRestrictionActive(entry.restrictionKey)
+    if restricted then
+        entry.control:SetChecked(false)
+        entry.control:Disable()
+        entry.control:SetAlpha(0.4)
+        if entry.label then entry.label:SetTextColor(0.45, 0.45, 0.45) end
+        if entry.developmentHoverShield then entry.developmentHoverShield:Show() end
+    else
+        if entry.developmentHoverShield then entry.developmentHoverShield:Hide() end
+        entry.control:Enable()
+        entry.control:SetAlpha(1)
+        if entry.readChecked then entry.control:SetChecked(entry.readChecked()) end
+        if entry.label and entry.enabledColor then
+            -- Forever's FontString:GetTextColor() may return a ColorMixin rather
+            -- than separate RGB numbers.  Keep known numeric colors instead of
+            -- round-tripping that client-specific return value.
+            entry.label:SetTextColor(
+                entry.enabledColor[1],
+                entry.enabledColor[2],
+                entry.enabledColor[3]
+            )
+        end
+    end
+end
+
+local function RegisterDevelopmentRestrictedControl(control, label, restrictionKey, readChecked, enabledColor, hoverWidth)
+    if not control or not restrictionKey then return end
+    local entry = {
+        control = control,
+        label = label,
+        restrictionKey = restrictionKey,
+        readChecked = readChecked,
+        enabledColor = label and (enabledColor or {0.85, 0.85, 0.85}) or nil,
+    }
+
+    -- A disabled CheckButton does not receive reliable mouse events.  Use a
+    -- transparent sibling above the whole option row so the restriction
+    -- tooltip works over both the checkbox and its label, and so clicks cannot
+    -- leak through while the option is locked.
+    local hover = CreateFrame("Button", nil, control:GetParent())
+    hover:SetPoint("LEFT", control, "LEFT", 0, 0)
+    hover:SetSize(hoverWidth or 164, 24)
+    hover:SetFrameLevel(control:GetFrameLevel() + 10)
+    hover:EnableMouse(true)
+    hover:SetScript("OnClick", function() end)
+    hover:SetScript("OnEnter", function(self)
+        if not DevelopmentRestrictionActive(restrictionKey) or not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(Client.DEVELOPMENT_DISABLED_TOOLTIP, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    hover:SetScript("OnLeave", function(self)
+        if GameTooltip and (not GameTooltip.GetOwner or GameTooltip:GetOwner() == self) then
+            GameTooltip:Hide()
+        end
+    end)
+    hover:Hide()
+    entry.developmentHoverShield = hover
+
+    developmentRestrictedControls[#developmentRestrictedControls + 1] = entry
+    RefreshDevelopmentRestrictedControl(entry)
+end
+
+function ns.RefreshDevelopmentRestrictedOptions()
+    for _, entry in ipairs(developmentRestrictedControls) do
+        RefreshDevelopmentRestrictedControl(entry)
+    end
+    for _, tab in pairs(tabs) do
+        if tab._tfSections then UpdateSectionLayout(tab) end
+    end
+end
+
 local function FinalizeSection(c, y)
     local sec = c._tfCurSection
     if sec and not sec.fullH then
@@ -639,6 +734,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
 
     local textX = 12
 
+    local gateControl
     if gateFamily then
         -- The gate checkbox is a child of the header BUTTON but must swallow its
         -- own clicks, otherwise ticking the box would also toggle the collapse.
@@ -647,6 +743,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
         gate:SetPoint("TOPLEFT", hdr, "TOPLEFT", -2, -2)
         gate:SetChecked(GateEnabled(gateFamily, gateElement))
         gate:SetScript("OnClick", function(self)
+            if DevelopmentRestrictionActive(GateDevelopmentRestriction(gateFamily)) then return end
             ns:PlayCheckSound(self)
             local on = self:GetChecked() == true or self:GetChecked() == 1
             local changed = GateWrite(gateFamily, gateElement, on)
@@ -657,6 +754,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
             GateChanged(gateFamily, gateElement, changed, gateApplyFn, c)
         end)
         sec.gateCheck = gate
+        gateControl = gate
         textX = 34
     end
 
@@ -672,6 +770,13 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
     lbl:SetText(text:upper())
     StyleOptionsOutline(lbl, 11)
     sec.label = lbl
+
+    if gateControl then
+        RegisterDevelopmentRestrictedControl(gateControl, lbl,
+            GateDevelopmentRestriction(gateFamily),
+            function() return GateEnabled(gateFamily, gateElement) end,
+            {TAB_R, TAB_G, TAB_B}, 300)
+    end
 
     hdr:SetScript("OnEnter", function(self)
         if GateEnabled(sec.gateFamily, sec.gateElement) then lbl:SetTextColor(1, 1, 1) end
@@ -786,10 +891,15 @@ local function Checkbox(parent, y, x, label, dbKey, applyFn)
     lbl:SetText(label)
     lbl:SetTextColor(0.85, 0.85, 0.85)
     cb:SetScript("OnClick", function(self)
+        if DevelopmentRestrictionActive(SettingDevelopmentRestriction(dbKey)) then return end
         ns:PlayCheckSound(self)
         SetOptionValue(dbKey, self:GetChecked() == 1 or self:GetChecked() == true)
         ResolveApply(parent, applyFn)()
     end)
+    RegisterDevelopmentRestrictedControl(cb, lbl, SettingDevelopmentRestriction(dbKey), function()
+        local current = GetOptionValue(dbKey)
+        return current == true or current == 1
+    end, {0.85, 0.85, 0.85}, 164)
     -- Returns the frame and label as well so a caller can build a dependent
     -- sub-option. Existing `y = Checkbox(...)` call sites ignore the extras.
     return y - 26, cb, lbl
@@ -801,6 +911,7 @@ end
 -- to it.
 local function SetSubOptionEnabled(cb, lbl, on)
     if not cb then return end
+    if DevelopmentRestrictionActive(cb._tfDevelopmentRestrictionKey) then on = false end
     if on then cb:Enable() else cb:Disable() end
     cb:SetAlpha(on and 1 or 0.4)
     if lbl then
@@ -933,12 +1044,16 @@ local function MasterToggle(c, y, label, family, description, applyFn)
         lbl:SetText("Enable " .. label)
         lbl:SetTextColor(1, 0.82, 0)
         cb:SetScript("OnClick", function(self)
+            if DevelopmentRestrictionActive(GateDevelopmentRestriction(family)) then return end
             ns:PlayCheckSound(self)
             local on = self:GetChecked() == true or self:GetChecked() == 1
             local changed = GateWrite(family, nil, on)
             UpdateSectionLayout(c)
             GateChanged(family, nil, changed, applyFn, c)
         end)
+        RegisterDevelopmentRestrictedControl(cb, lbl, GateDevelopmentRestriction(family),
+            function() return GateEnabled(family) end,
+            {1, 0.82, 0}, 360)
 
         if description then
             local info = block.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -962,12 +1077,16 @@ local function MasterToggle(c, y, label, family, description, applyFn)
     lbl:SetText("Enable " .. label)
     lbl:SetTextColor(1, 0.82, 0)
     cb:SetScript("OnClick", function(self)
+        if DevelopmentRestrictionActive(GateDevelopmentRestriction(family)) then return end
         ns:PlayCheckSound(self)
         local on = self:GetChecked() == true or self:GetChecked() == 1
         local changed = GateWrite(family, nil, on)
         UpdateSectionLayout(c)
         GateChanged(family, nil, changed, applyFn, c)
     end)
+    RegisterDevelopmentRestrictedControl(cb, lbl, GateDevelopmentRestriction(family),
+        function() return GateEnabled(family) end,
+        {1, 0.82, 0}, 360)
     y = y - 30
 
     if description then

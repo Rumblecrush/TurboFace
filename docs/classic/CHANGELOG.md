@@ -1,5 +1,12 @@
 # TurboFace Classic Changelog
 
+## 0.18.2 — unified Forever feature release
+
+- Rebuilt the Classic package from the same verified unified source baseline as the Forever release.
+- Added shared client-policy contracts for development-restricted features; Classic behavior remains unchanged.
+- Retired obsolete Forever-only SavedVariables recovery tooling from the source and release pipeline.
+- No Classic gameplay or portable SavedVariables schema change.
+
 ## 0.18.1 — distribution packaging correction
 
 - Excluded the source-only Forever batch launcher from public addon archives so CurseForge can validate both client packages.

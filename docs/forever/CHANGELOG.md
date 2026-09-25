@@ -1,7 +1,27 @@
 # TurboFace Forever Changelog
 
-## Unreleased — promoted live Forever defaults
+## 0.18.2 — Forever nameplate power and compatibility cleanup
 
+- Added a prepared Forever implementation of **Overlap Power Bar** using a detached addon-owned
+  `StatusBar`. Opaque nameplate power is normalized inside `UnitPowerPercent` with an identity curve
+  and passed directly to the proven `StatusBar:SetValue` sink; TurboFace never reads or calculates
+  the protected current value and never mutates or measures Blizzard's native health/power bars.
+- Added bounded module diagnostics for visible power fills, successful/rejected secret sinks, and
+  the last ordinary failure reason. The path remains pending live combat/pooling validation.
+- Fixed detached health text, power fill, and other TurboFace overlay children remaining visible
+  above interface panels. The `UIParent` overlay now mirrors the native root's readable
+  strata/level, visibility, and effective alpha without changing its established scale domain, and
+  uses no hooks, native mutation, or per-plate `OnUpdate` handlers. Diagnostics report overlays
+  hidden by native presentation.
+- Moved detached health text into an addon-owned frame above the power `StatusBar`, guaranteeing
+  that the health number remains in the foreground when the two visuals overlap.
+- Kept known-incomplete Forever controls visible but disabled with a clear hover explanation: Global
+  DoT/Heal Prediction; Nameplate Name+Title and both Damaged Only modes; and the Unit Frames/Class
+  Features masters. The same client policy fails closed at runtime while preserving portable saved
+  preferences.
+- Added `/tf dev bypass [on|off|status]` as a persistent Forever-only development override stored in
+  `TurboFaceCompatDB`. It re-enables those controls for targeted testing without changing portable
+  profiles or weakening deeper provider/secret-value safety checks.
 - Retired the beta SavedVariables workaround after the client began reliably loading normal addon SavedVariables.
 - Removed the generated restore payload, login-time database replacement, shell/batch/PowerShell snapshot tools, workaround documentation, and workaround diagnostics.
 - Promoted the current live 1.60.1 account configuration into `Core/ForeverDefaults.lua`, a normal client-owned defaults overlay that never replaces stored user values.

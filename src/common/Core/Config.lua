@@ -973,6 +973,14 @@ function ns.ValidatePlusSectionMap()
 end
 
 function ns.ModuleEnabled(family, element)
+    -- Client development restrictions are effective runtime gates, not saved
+    -- preferences. Portable profile state remains intact and a deliberate
+    -- client-owned developer bypass can temporarily expose the test path.
+    if ns.Client and ns.Client.IsGateDevelopmentRestricted
+        and ns.Client:IsGateDevelopmentRestricted(family) then
+        return false
+    end
+
     -- Client capability is an effective-state boundary, not a saved setting.
     -- Preserve the user's portable preference in TurboFaceDB even when the
     -- selected client cannot safely implement that feature family.
