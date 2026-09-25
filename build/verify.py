@@ -193,9 +193,9 @@ def merged_expected(flavor: str) -> dict[str, str]:
 def main() -> None:
     classic_toc_source = (ROOT / "src" / "classic" / "TurboFace.toc").read_text(errors="replace")
     forever_toc_source = (ROOT / "src" / "forever" / "TurboFace.toc").read_text(errors="replace")
-    if "## Version: 0.18.1" not in classic_toc_source:
+    if "## Version: 0.18.2" not in classic_toc_source:
         raise SystemExit("Classic version contract changed unexpectedly")
-    if "## Version: 0.18.1" not in forever_toc_source:
+    if "## Version: 0.18.2" not in forever_toc_source:
         raise SystemExit("Forever version contract changed unexpectedly")
 
     common = set(inventory(ROOT / "src" / "common"))
@@ -697,7 +697,7 @@ def main() -> None:
     source_map = (ROOT / "docs" / "SOURCE_MAP.md").read_text(errors="replace")
     strategy = (ROOT / "docs" / "MULTICLIENT_STRATEGY.md").read_text(errors="replace")
     for marker in (
-        "**Forever:** 0.18.1 / Interface 16001",
+        "**Forever:** 0.18.2 / Interface 16001",
         "| Byte-identical same-path files | 176 |",
         "| Same-path but different contents | 5 |",
         "| Forever-only paths | 13 |",
@@ -784,6 +784,28 @@ def main() -> None:
     for policy in ("hud.spendTalentPoint", "plus.questLevels", "plus.combinedBagMovable", "plus.vendorPrice"):
         if policy not in options_gui or policy not in client_policy:
             raise SystemExit(f"OptionsGUI/client policy missing capability: {policy}")
+    for restriction in (
+        '"dotPredictionEnabled"',
+        '"healPredictionEnabled"',
+        '"bubbleNameplates.friendlyNPCNameTitleOnly"',
+        '"bubbleNameplates.friendlyPlayerDamagedOnly"',
+        '"bubbleNameplates.friendlyNPCDamagedOnly"',
+        'unitframes = "unitframes.master"',
+        'class = "class.master"',
+    ):
+        if restriction not in client_policy:
+            raise SystemExit(f"Forever development restriction missing from client policy: {restriction}")
+    for required in (
+        "RegisterDevelopmentRestrictedControl",
+        "RefreshDevelopmentRestrictedOptions",
+        "developmentHoverShield",
+        "DEVELOPMENT_DISABLED_TOOLTIP",
+    ):
+        if required not in options_gui:
+            raise SystemExit(f"OptionsGUI missing development restriction contract: {required}")
+    core_source = (ROOT / "src" / "common" / "Core.lua").read_text(errors="replace")
+    if 'cmd == "dev"' not in core_source or 'action == "bypass"' not in core_source:
+        raise SystemExit("shared Core missing /tf dev bypass command")
 
     shared_media = (ROOT / "src" / "common" / "Core" / "SharedMedia.lua").read_text(errors="replace")
     if 'GetAsset("bankIconTexture"' not in shared_media:
@@ -1064,6 +1086,23 @@ def main() -> None:
         raise SystemExit("Classic nameplate provider registration missing")
     if 'ns.Providers:Register("nameplates", "forever-detached", FNP, 100)' not in forever_nameplates:
         raise SystemExit("Forever detached nameplate provider registration missing")
+    for required in (
+        "PowerIdentityCurve",
+        "API.GetUnitPowerPercentOpaque(st.unit, powerType, false, curve)",
+        "pcall(bar.SetValue, bar, value)",
+        'bar:SetPoint("BOTTOMLEFT", hp, "BOTTOMLEFT", 0, 0)',
+        "ReadNativePresentation",
+        "root.GetEffectiveAlpha",
+        'ns.Cadence:Add("TurboFaceForeverNameplatePresentation", 0.05',
+        'CreateFrame("Frame", nil, UIParent)',
+        "SyncOverlayLayer",
+        "healthTextHolder",
+    ):
+        if required not in forever_nameplates:
+            raise SystemExit(f"Forever detached nameplate power contract missing: {required}")
+    for forbidden in ("hp._tf", "hp:SetPoint", "hp:SetSize", "hp:SetHeight", "root:SetAlpha", "root:HookScript", "root:SetFrameStrata"):
+        if forbidden in forever_nameplates:
+            raise SystemExit(f"Forever detached nameplate adapter mutates native health bar: {forbidden}")
     if "function ns.NameplateProviderAfterNativeUpdate" not in nameplate_provider:
         raise SystemExit("shared nameplate defer contract missing")
 

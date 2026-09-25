@@ -15,7 +15,7 @@ if not (compat and compat.IS_TARGET_FOREVER_BUILD == true) then return end
 --   * Blizzard owns the nameplate root, UnitFrame, health/power/cast/aura frames,
 --     names, classification art, and every secret gameplay value.
 --   * TurboFace stores state only in external Lua side tables.
---   * TurboFace visuals are UIParent-owned detached frames that may ANCHOR TO
+--   * TurboFace visuals are addon-owned detached frames that may ANCHOR TO
 --     Blizzard regions but never mutate them.
 --   * No GetPoint/GetLeft/GetRight/GetCenter/geometry measurement is performed
 --     on Blizzard nameplate regions.
@@ -53,6 +53,8 @@ local GetTime = GetTime
 local floor = math.floor
 local max = math.max
 local min = math.min
+local UnitPowerType = UnitPowerType
+local PowerBarColor = PowerBarColor
 
 local ROOT = "Interface\\AddOns\\TurboFace\\Textures\\BubbleNameplates\\"
 local SOUND_ROOT = "Interface\\AddOns\\TurboFace\\Sounds\\BubbleNameplates\\"
@@ -62,6 +64,8 @@ local TEX_COMBO = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
 local SOUND_GAIN = SOUND_ROOT .. "GainAggro.mp3"
 local SOUND_LOSS = SOUND_ROOT .. "LoseAggro.mp3"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+local POWER_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local POWER_BASE_HEIGHT = 9
 -- The native root includes the name row above the health chassis. Its center
 -- is six UI units above the health-text row on Forever's fixed plate layout.
 local WHOLE_PLATE_HEALTH_TEXT_Y = -6
@@ -75,8 +79,6 @@ local DEFERRED_OPTIONS = {
     "rarityIconRight",
     "friendlyPlayerDamagedOnly",
     "friendlyNPCDamagedOnly",
-    "powerBarOverlap",
-    "powerBarHeightPct",
 }
 
 local function Enabled()
@@ -164,22 +166,89 @@ end
 
 local function EnsureOverlay(st)
     if st.overlay then return st.overlay end
+    -- UIParent preserves the scale domain used by the existing detached
+    -- geometry. Native strata/level are mirrored separately below so ordinary
+    -- interface panels still occlude this overlay with Blizzard's nameplate.
     local f = CreateFrame("Frame", nil, UIParent)
     f:SetSize(1, 1)
     f:EnableMouse(false)
-    f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(50)
+    f:SetFrameStrata("MEDIUM")
+    f:SetFrameLevel(10)
     st.overlay = f
     return f
 end
 
+local function SyncOverlayLayer(st)
+    local root, overlay = st and st.root, st and st.overlay
+    if not root or not overlay then return end
+
+    local strata = "MEDIUM"
+    if type(root.GetFrameStrata) == "function" then
+        local ok, value = pcall(root.GetFrameStrata, root)
+        if ok and (not API.CanAccessValue or API.CanAccessValue(value))
+            and type(value) == "string" then
+            strata = value
+        end
+    end
+
+    local level = 10
+    if type(root.GetFrameLevel) == "function" then
+        local ok, value = pcall(root.GetFrameLevel, root)
+        if ok and (not API.CanAccessValue or API.CanAccessValue(value))
+            and type(value) == "number" then
+            level = max(0, floor(value)) + 1
+        end
+    end
+
+    overlay:SetFrameStrata(strata)
+    overlay:SetFrameLevel(level)
+    if st.powerBar then st.powerBar:SetFrameLevel(level + 1) end
+    if st.healthTextHolder then st.healthTextHolder:SetFrameLevel(level + 2) end
+end
+
+local function ReadNativePresentation(root)
+    if not root then return false, 0 end
+    local visibilityMethod = root.IsVisible or root.IsShown
+    if type(visibilityMethod) ~= "function" then return false, 0 end
+    local visibleOK, visible = pcall(visibilityMethod, root)
+    if not visibleOK or (API.CanAccessValue and not API.CanAccessValue(visible))
+        or visible ~= true then
+        return false, 0
+    end
+
+    local alpha = 1
+    if type(root.GetEffectiveAlpha) == "function" then
+        local alphaOK, value = pcall(root.GetEffectiveAlpha, root)
+        if not alphaOK or (API.CanAccessValue and not API.CanAccessValue(value))
+            or type(value) ~= "number" then
+            return false, 0
+        end
+        alpha = min(1, max(0, value))
+    end
+    return true, alpha
+end
+
+local function SyncOverlayPresentation(st)
+    if not st or not st.overlay then return end
+    local visible, alpha = ReadNativePresentation(st.root)
+    if not visible then
+        st.overlay:Hide()
+        st.hiddenByNative = true
+        return
+    end
+    st.overlay:SetAlpha(alpha)
+    st.overlay:Show()
+    st.hiddenByNative = alpha <= 0
+end
+
 local function AttachOverlay(st)
     local f = EnsureOverlay(st)
+    SyncOverlayLayer(st)
     f:ClearAllPoints()
     -- Write-only anchor: this changes only TurboFace's detached frame. We never
     -- query the native plate's position/size.
     f:SetPoint("CENTER", st.root, "CENTER", 0, 0)
-    f:Show()
+    SyncOverlayPresentation(st)
     return f
 end
 
@@ -187,6 +256,7 @@ local function HideState(st)
     if not st then return end
     if FNP.Auras then FNP.Auras:Release(st) end
     if st.overlay then st.overlay:Hide() end
+    if st.powerBar then st.powerBar:Hide() end
     FNP.activeSwing[st] = nil
 end
 
@@ -201,7 +271,13 @@ end
 
 local function EnsureHealthText(st)
     if st.healthText then return st.healthText end
-    local f = EnsureOverlay(st):CreateFontString(nil, "OVERLAY")
+    local overlay = EnsureOverlay(st)
+    local holder = CreateFrame("Frame", nil, overlay)
+    holder:SetSize(1, 1)
+    holder:EnableMouse(false)
+    holder:SetFrameLevel(overlay:GetFrameLevel() + 2)
+    st.healthTextHolder = holder
+    local f = holder:CreateFontString(nil, "OVERLAY")
     f:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     f:SetTextColor(1, 1, 1, 1)
     f:SetShadowColor(0, 0, 0, 1)
@@ -246,6 +322,121 @@ local function UpdateHealthText(st, hp)
     end
 end
 
+-- Forever can expose nameplate power as an opaque scalar. Keep normalization
+-- inside Blizzard's UnitPowerPercent curve evaluator, then pass the untouched
+-- result directly to an addon-owned StatusBar. The bar is detached from the
+-- pooled CompactUnitFrame and uses the native health bar only as a write-only
+-- anchor target.
+local powerIdentityCurve
+local powerIdentityCurveAttempted = false
+
+local function PowerIdentityCurve()
+    if powerIdentityCurveAttempted then return powerIdentityCurve end
+    powerIdentityCurveAttempted = true
+
+    local curveUtil = _G.C_CurveUtil
+    if type(curveUtil) ~= "table" or type(curveUtil.CreateCurve) ~= "function" then return nil end
+    local ok, curve = pcall(curveUtil.CreateCurve)
+    if not ok or not curve or type(curve.AddPoint) ~= "function" then return nil end
+
+    local enum = _G.Enum
+    local curveType = type(enum) == "table" and enum.LuaCurveType or nil
+    local linear = type(curveType) == "table" and curveType.Linear or nil
+    if linear ~= nil and type(curve.SetType) == "function" then
+        pcall(curve.SetType, curve, linear)
+    end
+    if not pcall(curve.AddPoint, curve, 0, 0)
+        or not pcall(curve.AddPoint, curve, 1, 1) then
+        return nil
+    end
+    powerIdentityCurve = curve
+    return curve
+end
+
+local function EnsurePowerBar(st)
+    if st.powerBar then return st.powerBar end
+    local overlay = EnsureOverlay(st)
+    local bar = CreateFrame("StatusBar", nil, overlay)
+    bar:SetFrameLevel(overlay:GetFrameLevel() + 1)
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    bar:SetStatusBarTexture(POWER_TEXTURE)
+    bar:EnableMouse(false)
+    st.powerBar = bar
+    return bar
+end
+
+local function PowerHeight()
+    local fraction = tonumber(ns.c_nameplatePowerBarHeightPct) or 0.30
+    fraction = min(0.40, max(0.10, fraction))
+    return max(1, floor((POWER_BASE_HEIGHT * fraction) + 0.5))
+end
+
+local function ReadPowerType(unit)
+    if type(UnitPowerType) ~= "function" then return nil end
+    local ok, powerType, token = pcall(UnitPowerType, unit)
+    if not ok then return nil end
+    if API.CanAccessValue and not API.CanAccessValue(powerType) then return nil end
+    if API.CanAccessValue and not API.CanAccessValue(token) then token = nil end
+    if type(powerType) ~= "number" then return nil end
+    return powerType, token
+end
+
+local function UpdatePowerBar(st, hp)
+    if not st then return end
+    local bar = st.powerBar
+    if ns.c_nameplatePowerBarOverlap ~= true or not hp or not st.unit then
+        if bar then bar:Hide() end
+        st.powerSinkOK = nil
+        return
+    end
+
+    local powerType, token = ReadPowerType(st.unit)
+    if powerType == nil then
+        if bar then bar:Hide() end
+        st.powerSinkOK = false
+        st.powerError = "unreadable power type"
+        return
+    end
+
+    local valueOK, value = false, nil
+    local curve = PowerIdentityCurve()
+    if curve and API.GetUnitPowerPercentOpaque then
+        valueOK, value = API.GetUnitPowerPercentOpaque(st.unit, powerType, false, curve)
+    end
+    if not valueOK then
+        -- Readable clients/build states retain a bounded arithmetic fallback.
+        -- The wrappers return nil before any Lua operation when either scalar
+        -- is secret, so this path cannot inspect protected power.
+        local current = API.ReadUnitPower and API.ReadUnitPower(st.unit, powerType) or nil
+        local maximum = API.ReadUnitPowerMax and API.ReadUnitPowerMax(st.unit, powerType) or nil
+        if type(current) == "number" and type(maximum) == "number" and maximum > 0 then
+            value = current / maximum
+            valueOK = true
+        end
+    end
+
+    if not valueOK then
+        if bar then bar:Hide() end
+        st.powerSinkOK = false
+        st.powerError = "no secret-safe power percentage"
+        return
+    end
+
+    bar = EnsurePowerBar(st)
+    bar:ClearAllPoints()
+    bar:SetPoint("BOTTOMLEFT", hp, "BOTTOMLEFT", 0, 0)
+    bar:SetPoint("BOTTOMRIGHT", hp, "BOTTOMRIGHT", 0, 0)
+    bar:SetHeight(PowerHeight())
+
+    local color = PowerBarColor and (PowerBarColor[token] or PowerBarColor[powerType])
+    bar:SetStatusBarColor(color and color.r or 0.2, color and color.g or 0.4, color and color.b or 1, 1)
+    local sinkOK = pcall(bar.SetValue, bar, value)
+    if sinkOK then bar:Show() else bar:Hide() end
+    st.powerSinkOK = sinkOK
+    st.powerError = sinkOK and nil or "StatusBar rejected power value"
+end
+
 local function NPCIDFromUnit(unit)
     local guid = API.ReadUnitGUID(unit)
     if type(guid) ~= "string" then return nil end
@@ -285,7 +476,10 @@ end
 
 local function UpdateTitle(st, nameRegion)
     local f = EnsureTitle(st)
-    if not ns.c_nameplateFriendlyNPCNameTitleOnly or not nameRegion or not FriendlyNPC(st.unit) then
+    local restricted = ns.Client and ns.Client.IsSettingDevelopmentRestricted
+        and ns.Client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCNameTitleOnly")
+    if restricted or not ns.c_nameplateFriendlyNPCNameTitleOnly
+        or not nameRegion or not FriendlyNPC(st.unit) then
         f:Hide()
         return nil
     end
@@ -626,6 +820,30 @@ function FNP:RefreshSwingDriver()
     end
 end
 
+function FNP:PresentationTick()
+    if not Enabled() then
+        self:RefreshPresentationDriver()
+        return
+    end
+    for _, st in pairs(self.statesByUnit) do
+        SyncOverlayPresentation(st)
+    end
+end
+
+function FNP:RefreshPresentationDriver()
+    if not ns.Cadence then return end
+    if next(self.statesByUnit) and Enabled() and self.runtimeActive then
+        -- Detached overlays do not inherit the pooled nameplate root's own
+        -- visibility/alpha. One shared 20 Hz client mirrors only ordinary
+        -- native presentation state, avoiding one OnUpdate per visible plate.
+        ns.Cadence:Add("TurboFaceForeverNameplatePresentation", 0.05, function()
+            FNP:PresentationTick()
+        end, true)
+    else
+        ns.Cadence:Remove("TurboFaceForeverNameplatePresentation")
+    end
+end
+
 function FNP:RefreshComboDriver()
     if not ns.Cadence then return end
     local targetState
@@ -707,6 +925,7 @@ function FNP:Bind(unit, root, reason)
     local _, hp, _, nameRegion = NativeRegions(root)
     UpdateNameShadow(st, nameRegion)
     UpdateHealthText(st, hp)
+    UpdatePowerBar(st, hp)
     local title = UpdateTitle(st, nameRegion)
     UpdateJob(st, nameRegion, title)
     UpdateThreat(st, hp)
@@ -714,6 +933,7 @@ function FNP:Bind(unit, root, reason)
     self:RefreshSwingState(st)
     if self.Auras then self.Auras:Bind(st, hp) end
     self:RefreshThreatDriver()
+    self:RefreshPresentationDriver()
 
     self.addedCount = self.addedCount + 1
 end
@@ -739,6 +959,7 @@ function FNP:Remove(unit, reason)
     self:RefreshSwingDriver()
     self:RefreshComboDriver()
     self:RefreshThreatDriver()
+    self:RefreshPresentationDriver()
     if self.Auras then self.Auras:RefreshCount() end
 end
 
@@ -768,6 +989,7 @@ function FNP:RefreshAll(reason)
         self:RefreshSwingDriver()
         self:RefreshComboDriver()
         self:RefreshThreatDriver()
+        self:RefreshPresentationDriver()
         return
     end
 
@@ -791,6 +1013,7 @@ function FNP:RefreshAll(reason)
     for i = 1, #stale do self:Remove(stale[i], "stale") end
     self:RefreshComboDriver()
     self:RefreshThreatDriver()
+    self:RefreshPresentationDriver()
     if self.Auras then self.Auras:RefreshCount() end
 end
 
@@ -847,8 +1070,19 @@ eventFrame:SetScript("OnEvent", function(_, event, unit)
     elseif event == "GROUP_ROSTER_UPDATE" then
         FNP:RefreshThreatDriver()
         FNP:ThreatTick()
-    elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
-        if event == "UNIT_POWER_UPDATE" or event == "UNIT_POWER_FREQUENT" then
+    elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UNIT_POWER_UPDATE"
+        or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER"
+        or event == "UNIT_DISPLAYPOWER" then
+        if event ~= "UPDATE_SHAPESHIFT_FORM" then
+            local st = unit and FNP.statesByUnit[unit]
+            if st then
+                RunNextFrame(function()
+                    if st.unit == unit then
+                        local _, hp = NativeRegions(st.root)
+                        UpdatePowerBar(st, hp)
+                    end
+                end)
+            end
             if unit ~= "player" then return end
         end
         for _, st in pairs(FNP.statesByUnit) do
@@ -869,7 +1103,8 @@ local RUNTIME_EVENTS = {
     "PLAYER_TARGET_CHANGED", "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE",
     "UNIT_HEALTH", "UNIT_MAXHEALTH",
     "UNIT_NAME_UPDATE", "UNIT_FACTION", "GROUP_ROSTER_UPDATE", "UPDATE_SHAPESHIFT_FORM",
-    "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "PLAYER_REGEN_ENABLED",
+    "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER",
+    "PLAYER_REGEN_ENABLED",
 }
 
 function FNP:ActivateRuntime()
@@ -891,6 +1126,7 @@ function FNP:DeactivateRuntime()
         ns.Cadence:Remove("TurboFaceForeverNameplateSwing")
         ns.Cadence:Remove("TurboFaceForeverNameplateCombo")
         ns.Cadence:Remove("TurboFaceForeverNameplateThreat")
+        ns.Cadence:Remove("TurboFaceForeverNameplatePresentation")
     end
 end
 
@@ -912,13 +1148,19 @@ end
 
 function FNP:GetDiagnostics()
     local visible, swing, healthTextVisible, threatVisible, threatMapped = 0, 0, 0, 0, 0
-    local healthTextError
+    local powerVisible, powerSinkOK, powerSinkFailed, hiddenByNative = 0, 0, 0, 0
+    local healthTextError, powerError
     for _, st in pairs(self.statesByUnit) do
         if st.overlay and st.overlay:IsShown() then visible = visible + 1 end
         if st.healthText and st.healthText:IsShown() then healthTextVisible = healthTextVisible + 1 end
+        if st.powerBar and st.powerBar:IsShown() then powerVisible = powerVisible + 1 end
+        if st.powerSinkOK == true then powerSinkOK = powerSinkOK + 1 end
+        if st.powerSinkOK == false then powerSinkFailed = powerSinkFailed + 1 end
+        if st.hiddenByNative == true then hiddenByNative = hiddenByNative + 1 end
         if st.threat and st.threat:IsShown() then threatVisible = threatVisible + 1 end
         if st.threatToken then threatMapped = threatMapped + 1 end
         if st.healthTextError then healthTextError = st.healthTextError end
+        if st.powerError then powerError = st.powerError end
     end
     for _ in pairs(self.activeSwing) do swing = swing + 1 end
     return {
@@ -941,6 +1183,12 @@ function FNP:GetDiagnostics()
         healthText = ns.c_nameplateCenterHealthText ~= false,
         healthTextVisible = healthTextVisible,
         healthTextError = healthTextError,
+        power = ns.c_nameplatePowerBarOverlap == true,
+        powerVisible = powerVisible,
+        powerSinkOK = powerSinkOK,
+        powerSinkFailed = powerSinkFailed,
+        powerError = powerError,
+        hiddenByNative = hiddenByNative,
         nameShadow = "blizzard-native",
         title = ns.c_nameplateFriendlyNPCNameTitleOnly == true,
         aurasSupported = self.Auras and self.Auras.supported == true,

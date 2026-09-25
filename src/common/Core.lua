@@ -1835,6 +1835,34 @@ SlashCmdList["TURBOFACE"] = function(msg)
         local cmd, args = msg:match("^(%S+)%s*(.*)$")
         cmd = cmd and cmd:lower()
 
+        if cmd == "dev" then
+            local action = (args or ""):lower():match("^%s*(.-)%s*$") or ""
+            action = action:gsub("%s+", " ")
+            if action == "bypass" or action == "bypass on" or action == "bypass off"
+                or action == "bypass status" then
+                if not CorePolicy("developmentFeatureBypass") then
+                    ns:Chat("Dev", "the Forever feature bypass is only available on Forever")
+                    return
+                end
+                local active = ns.Client:IsDevBypassActive()
+                if action ~= "bypass status" then
+                    local requested = action == "bypass on" or (action == "bypass" and not active)
+                    active = ns.Client:SetDevBypass(requested)
+                    if ns.UpdateDBCache then ns:UpdateDBCache() end
+                    if ns.RefreshDevelopmentRestrictedOptions then ns.RefreshDevelopmentRestrictedOptions() end
+                    if ns.DotPrediction and ns.DotPrediction.Refresh then ns.DotPrediction:Refresh() end
+                    if ns.HealPrediction and ns.HealPrediction.Refresh then ns.HealPrediction:Refresh() end
+                    if ns.UpdateAllPlates then ns:UpdateAllPlates() end
+                end
+                ns:Chat("Dev", ("Forever feature bypass %s%s"):format(
+                    active and "ENABLED" or "disabled",
+                    action == "bypass status" and "" or "; /reload before testing Unit Frames or Class Features"))
+                return
+            end
+            ns:Chat("Dev", "usage: /tf dev bypass [on|off|status]")
+            return
+        end
+
         if CorePolicy("extendedDiagnostics") and cmd == "compat" then
             if ns.Compat and ns.Compat.HandleSlash then ns.Compat:HandleSlash(args) end
             return

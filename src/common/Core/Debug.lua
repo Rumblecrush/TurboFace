@@ -282,17 +282,21 @@ function Debug:ModuleReport()
     if ns.Compat and ns.Compat.IS_TARGET_FOREVER_BUILD == true then
         if ns.ForeverNameplates and ns.ForeverNameplates.GetDiagnostics then
             local n = ns.ForeverNameplates:GetDiagnostics()
-            C(("Nameplates Forever: mode=%s init=%s runtime=%s enabled=%s visible=%d events=%d refresh=%d cvars=%s combo=%s job=%s threat=%s/%d mapped=%d aliases=%d swing=%s healthText=%s/%d shadow=%s title=%s activeSwing=%d auras=%s/%d deferred=%s err=%s healthErr=%s auraErr=%s"):format(
+            C(("Nameplates Forever: mode=%s init=%s runtime=%s enabled=%s visible=%d nativeHidden=%d events=%d refresh=%d cvars=%s combo=%s job=%s threat=%s/%d mapped=%d aliases=%d swing=%s healthText=%s/%d power=%s/%d sink=%d/%d shadow=%s title=%s activeSwing=%d auras=%s/%d deferred=%s err=%s healthErr=%s powerErr=%s auraErr=%s"):format(
                 tostring(n.mode or "?"), tostring(n.initialized == true), tostring(n.runtimeActive == true), tostring(n.enabled == true),
-                tonumber(n.visible) or 0, tonumber(n.events) or 0, tonumber(n.refreshCount) or 0,
+                tonumber(n.visible) or 0, tonumber(n.hiddenByNative) or 0,
+                tonumber(n.events) or 0, tonumber(n.refreshCount) or 0,
                 tostring(n.cvars == true), tostring(n.combo == true), tostring(n.jobIcon == true),
                 tostring(n.threat == true), tonumber(n.threatVisible) or 0,
                 tonumber(n.threatMapped) or 0, tonumber(n.threatAliases) or 0,
                 tostring(n.swing == true), tostring(n.healthText == true),
-                tonumber(n.healthTextVisible) or 0, tostring(n.nameShadow or false),
+                tonumber(n.healthTextVisible) or 0, tostring(n.power == true),
+                tonumber(n.powerVisible) or 0, tonumber(n.powerSinkOK) or 0,
+                tonumber(n.powerSinkFailed) or 0, tostring(n.nameShadow or false),
                 tostring(n.title == true), tonumber(n.activeSwing) or 0, tostring(n.aurasSupported == true),
                 tonumber(n.aurasActive) or 0, tostring(n.deferred or "none"),
                 tostring(n.lastError or "none"), tostring(n.healthTextError or "none"),
+                tostring(n.powerError or "none"),
                 tostring(n.auraError or "none")))
         else
             C("Nameplates Forever: runtime=BLOCKED reason=detached-adapter-missing")
