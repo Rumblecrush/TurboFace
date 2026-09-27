@@ -155,9 +155,16 @@ local function PlayerName()
     return StripRealm(name)
 end
 
-local function OwnLootMessage(msg, receiver)
-    if receiver and receiver ~= "" then
-        return StripRealm(receiver) == PlayerName()
+local function OwnLootMessage(msg, playerName, playerName2)
+    -- CHAT_MSG_LOOT exposes both playerName (payload #2) and playerName2
+    -- (payload #5). Client builds have disagreed about which field identifies
+    -- the recipient for a local loot line, so accept either documented field
+    -- when it names the player. Do not reject early merely because the other
+    -- field contains a different non-empty value.
+    local ownName = PlayerName()
+    if ownName then
+        if playerName and playerName ~= "" and StripRealm(playerName) == ownName then return true end
+        if playerName2 and playerName2 ~= "" and StripRealm(playerName2) == ownName then return true end
     end
     msg = tostring(msg or "")
     return string_find(msg, "You receive", 1, true) or string_find(msg, "You loot", 1, true)
@@ -660,8 +667,8 @@ function Loot:Refresh()
     if active then self:RegisterMover() end
 end
 
-local function OnChatLoot(msg, author, language, channelString, receiver)
-    if not OwnLootMessage(msg, receiver) then return end
+local function OnChatLoot(msg, playerName, language, channelString, playerName2)
+    if not OwnLootMessage(msg, playerName, playerName2) then return end
     local link, pos = ExtractItemLink(msg)
     if not link then return end
     recentLootTime = GetTime and GetTime() or 0

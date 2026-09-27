@@ -2,6 +2,8 @@
 
 ## 0.18.3 — aura, trainer, automation, and combat reliability
 
+- Fixed TurboFace Loot Frame ownership detection across client variants that identify the local
+  loot recipient in either documented `CHAT_MSG_LOOT` player-name field.
 - Unified the visual contract for Target, Target-of-Target, Party, Pet, and Nameplate aura rows:
   bottom-inside countdowns, top-right stack counts, and one shared font/size/style setting.
 - Removed the redundant Nameplate-only buff/debuff text-size controls; **Timer & Stack Font Size**

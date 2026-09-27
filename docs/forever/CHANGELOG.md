@@ -2,6 +2,9 @@
 
 ## 0.18.3 — aura, trainer, automation, and target swing recovery
 
+- Fixed the TurboFace Loot Frame rejecting local loot messages on Forever build 70009 when the
+  client supplies the recipient in `CHAT_MSG_LOOT`'s primary player-name field rather than its
+  secondary field.
 - Centered detached Nameplate buff/debuff rows against the full Forever nameplate root instead of
   the narrower native HP bar; left/right growth modes remain aligned to the HP edges.
 - Fixed Player buff/debuff styling disappearing when combat activates Forever's secret aura domain.
@@ -49,6 +52,32 @@
 - Restored the Forever Target Swing Timer with a client-owned `UNIT_COMBAT` cadence estimator. It
   learns plausible hit-to-hit intervals while the selected hostile targets the player, resynchronizes
   on every qualifying melee result, and safely tolerates secret target booleans.
+- Restored the selected hostile's Nameplate Swing Timer from that same estimator. The independent
+  Nameplate feature owns the lightweight `UNIT_COMBAT` subscription when enabled and publishes each
+  observation to both presentations without double-sampling; unselected attackers remain unavailable
+  because the event carries no source GUID.
+- Reused Classic's exact Nameplate Swing Timer presentation on Forever's detached addon-owned host:
+  the mirrored tapered red glow/core sweep, 5%-95% visual handoff, centered native-size ready glyph,
+  four-pixel geometry, and shared textures now remain physically owned by the common renderer.
+- Centered that sweep against the complete Forever nameplate root rather than its narrower HP bar,
+  and raised only the swing visual above Blizzard's new selected-nameplate edge glow while retaining
+  fullscreen-dialog occlusion.
+- Separated its horizontal and vertical geometry: an addon-owned guide supplies the complete native
+  root width, while the swing band itself sits immediately below the HP bar instead of below the
+  taller nameplate root.
+- Matched the swing sweep and ready diamond to the detached HP text's exact root-centered horizontal
+  point while preserving the HP-bottom vertical point, correcting the remaining off-center shift.
+- Made that shared root-center anchor unconditional when Forever hides derived coordinates; the
+  swing no longer silently falls back to the narrower HP bar's horizontal center in combat.
+- Lowered the Forever swing band three pixels beneath the HP chassis and increased its glow/core
+  opacity for clearer contrast against Blizzard's bright selected-nameplate treatment; Classic's
+  established presentation remains unchanged.
+- Raised only the Forever swing widget to tooltip strata after live testing showed Blizzard's new
+  selected-edge artwork also renders above dialog strata; parent-overlay visibility still controls
+  panel and native-nameplate occlusion.
+- Detached that tooltip-strata swing widget into a true top-level `UIParent` child after the nested
+  overlay still lost ordering to Blizzard artwork. TurboFace explicitly mirrors native visibility
+  and alpha, and uses the highest texture sublevels for the glow, core, and ready diamond.
 - Disabled the incomplete TurboFace Cast Bars master on Forever while retaining player and target
   swing timers. The cast-bar path remains available to developers through `/tf dev bypass` and
   Classic behavior is unchanged.

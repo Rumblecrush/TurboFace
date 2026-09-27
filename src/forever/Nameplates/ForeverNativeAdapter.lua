@@ -58,8 +58,6 @@ local PowerBarColor = PowerBarColor
 
 local ROOT = "Interface\\AddOns\\TurboFace\\Textures\\BubbleNameplates\\"
 local SOUND_ROOT = "Interface\\AddOns\\TurboFace\\Sounds\\BubbleNameplates\\"
-local TEX_ATTACK_READY = ROOT .. "Nameplate-AttackIndicator.tga"
-local TEX_SWING = ROOT .. "Nameplate-SwingGlow.tga"
 local TEX_COMBO = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
 local SOUND_GAIN = SOUND_ROOT .. "GainAggro.mp3"
 local SOUND_LOSS = SOUND_ROOT .. "LoseAggro.mp3"
@@ -69,6 +67,11 @@ local POWER_BASE_HEIGHT = 9
 -- The native root includes the name row above the health chassis. Its center
 -- is six UI units above the health-text row on Forever's fixed plate layout.
 local WHOLE_PLATE_HEALTH_TEXT_Y = -6
+-- The HP row is eight UI units tall on the fixed Forever nameplate layout.
+-- This supplies its bottom edge before/while derived guide coordinates are
+-- opaque; a readable live guide replaces it with the exact offset below.
+local WHOLE_PLATE_HP_BOTTOM_Y = WHOLE_PLATE_HEALTH_TEXT_Y - 4
+local SWING_Y_NUDGE = -3
 
 local _, PLAYER_CLASS = API.ReadUnitClass("player")
 local COMBO_CLASS = PLAYER_CLASS == "ROGUE" or PLAYER_CLASS == "DRUID"
@@ -233,10 +236,12 @@ local function SyncOverlayPresentation(st)
     local visible, alpha = ReadNativePresentation(st.root)
     if not visible then
         st.overlay:Hide()
+        if st.swing then st.swing:Hide() end
         st.hiddenByNative = true
         return
     end
     st.overlay:SetAlpha(alpha)
+    if st.swing then st.swing:SetAlpha(alpha) end
     st.overlay:Show()
     st.hiddenByNative = alpha <= 0
 end
@@ -257,6 +262,7 @@ local function HideState(st)
     if FNP.Auras then FNP.Auras:Release(st) end
     if st.overlay then st.overlay:Hide() end
     if st.powerBar then st.powerBar:Hide() end
+    if st.swing then st.swing:Hide() end
     FNP.activeSwing[st] = nil
 end
 
@@ -713,40 +719,125 @@ local function UpdateCombo(st, nameRegion, hp)
     return true
 end
 
-local function EnsureSwing(st)
-    if st.swing then return st.swing end
-    local f = CreateFrame("Frame", nil, EnsureOverlay(st))
-    f:SetHeight(3)
-    f:EnableMouse(false)
+local function EnsureSwing(st, hp)
+    if not (st and hp and BNP and BNP._EnsureSwing) then return nil end
+    -- Reuse Classic's exact swing presentation on an addon-owned detached host:
+    -- mirrored tapered glow/core textures, 5%-95% lead-in/ready handoff, and the
+    -- native-size centered attack-ready glyph. Only timing and ownership differ.
+    local host = EnsureOverlay(st)
+    host.hp = hp
+    -- Resolve only the horizontal span through an addon-owned guide. The guide
+    -- uses the native root as a write-only anchor; reading our own frame avoids
+    -- measuring Blizzard's protected/pool-managed object. The common renderer
+    -- remains anchored vertically to the HP bar's actual bottom edge.
+    local widthGuide = st.swingWidthGuide
+    if not widthGuide then
+        widthGuide = CreateFrame("Frame", nil, UIParent)
+        widthGuide:SetHeight(1)
+        widthGuide:EnableMouse(false)
+        st.swingWidthGuide = widthGuide
+    end
+    if widthGuide._tfRoot ~= st.root then
+        widthGuide:ClearAllPoints()
+        widthGuide:SetPoint("LEFT", st.root, "LEFT", 0, 0)
+        widthGuide:SetPoint("RIGHT", st.root, "RIGHT", 0, 0)
+        widthGuide._tfRoot = st.root
+    end
+    local widthOK, width = pcall(widthGuide.GetWidth, widthGuide)
+    if widthOK and (not API.CanAccessValue or API.CanAccessValue(width))
+        and type(width) == "number" and width > 0 then
+        host._tfSwingWidth = width
+    end
 
-    f.progress = CreateFrame("StatusBar", nil, f)
-    f.progress:SetAllPoints(f)
-    f.progress:SetMinMaxValues(0, 1)
-    f.progress:SetStatusBarTexture(TEX_SWING)
-    f.progress:SetStatusBarColor(1, 1, 1, 0.8)
+    -- Match the detached HP text's horizontal center exactly while retaining
+    -- the HP bar's bottom as the vertical reference. WoW anchors cannot take X
+    -- and Y from different relatives, so two invisible addon-owned guides feed
+    -- one cached Y offset. The final frame uses the detached host itself as its
+    -- center anchor -- exactly the same object used by the HP text -- avoiding
+    -- cross-scale offsets against the native HP bar. No Blizzard geometry is
+    -- read directly.
+    local rootCenterGuide = st.swingRootCenterGuide
+    if not rootCenterGuide then
+        rootCenterGuide = CreateFrame("Frame", nil, UIParent)
+        rootCenterGuide:SetSize(1, 1)
+        rootCenterGuide:EnableMouse(false)
+        st.swingRootCenterGuide = rootCenterGuide
+    end
+    rootCenterGuide:ClearAllPoints()
+    rootCenterGuide:SetPoint("CENTER", host, "CENTER", 0, 0)
 
-    f.ready = f:CreateTexture(nil, "OVERLAY")
-    f.ready:SetTexture(TEX_ATTACK_READY)
-    f.ready:SetSize(10, 10)
-    f.ready:SetPoint("CENTER", f, "RIGHT", 7, 0)
-    f.ready:Hide()
+    local hpBottomGuide = st.swingHPBottomGuide
+    if not hpBottomGuide then
+        hpBottomGuide = CreateFrame("Frame", nil, UIParent)
+        hpBottomGuide:SetSize(1, 1)
+        hpBottomGuide:EnableMouse(false)
+        st.swingHPBottomGuide = hpBottomGuide
+    end
+    hpBottomGuide:ClearAllPoints()
+    hpBottomGuide:SetPoint("CENTER", hp, "BOTTOM", 0, 0)
 
+    local rootOK, _, rootY = pcall(rootCenterGuide.GetCenter, rootCenterGuide)
+    local hpOK, _, bottomY = pcall(hpBottomGuide.GetCenter, hpBottomGuide)
+    local readableRootY = rootOK and (not API.CanAccessValue or API.CanAccessValue(rootY))
+        and type(rootY) == "number"
+    local readableBottomY = hpOK and (not API.CanAccessValue or API.CanAccessValue(bottomY))
+        and type(bottomY) == "number"
+    -- Horizontal ownership never depends on coordinate readability. The HP
+    -- text and swing therefore always share this exact root-centered object.
+    host._tfSwingCenterAnchor = host
+    if readableRootY and readableBottomY then
+        host._tfSwingYOffset = bottomY - rootY + SWING_Y_NUDGE
+    elseif type(host._tfSwingYOffset) ~= "number" then
+        host._tfSwingYOffset = WHOLE_PLATE_HP_BOTTOM_Y + SWING_Y_NUDGE
+    end
+    host._tfSwingAnchor = nil
+    local f = BNP:_EnsureSwing(host)
+    -- Forever's selected-nameplate edge artwork is drawn above DIALOG strata
+    -- and can still outrank a TOOLTIP child nested under the medium overlay.
+    -- Detach only this widget to UIParent, then explicitly mirror the overlay's
+    -- visibility/alpha. This gives its TOOLTIP/10000 ordering real top-level
+    -- ownership without changing any other nameplate augmentation layer.
+    if f then
+        if f:GetParent() ~= UIParent then f:SetParent(UIParent) end
+        f:SetFrameStrata("TOOLTIP")
+        f:SetFrameLevel(10000)
+        f.leftGlow:SetDrawLayer("OVERLAY", 5)
+        f.rightGlow:SetDrawLayer("OVERLAY", 5)
+        f.leftCore:SetDrawLayer("OVERLAY", 6)
+        f.rightCore:SetDrawLayer("OVERLAY", 6)
+        f.ready:SetDrawLayer("OVERLAY", 7)
+        f:SetAlpha(host:GetAlpha())
+        -- Forever's selected-nameplate art is brighter than Classic's native
+        -- chassis. Preserve the shared textures/geometry but strengthen their
+        -- alpha so the sweep remains clearly legible over that treatment.
+        f.leftGlow:SetVertexColor(1.0, 0.10, 0.06, 0.82)
+        f.rightGlow:SetVertexColor(1.0, 0.10, 0.06, 0.82)
+        f.leftCore:SetVertexColor(1.0, 0.06, 0.03, 0.96)
+        f.rightCore:SetVertexColor(1.0, 0.06, 0.03, 0.96)
+    end
     st.swing = f
     return f
 end
 
 local function StopSwing(st)
     FNP.activeSwing[st] = nil
-    if st and st.swing then st.swing:Hide() end
+    if st and st.swing then
+        if BNP and BNP._HideSwingProgress then BNP:_HideSwingProgress(st.swing) end
+        if BNP and BNP._SetSwingReady then BNP:_SetSwingReady(st.swing, false) end
+        st.swing:Hide()
+    end
 end
 
 function FNP:RefreshSwingState(st)
-    if not st or not st.unit or ns.c_nameplateSwingTimer == false
-        or API.ReadUnitCanAttack("player", st.unit) ~= true
-    then
+    if not st or not st.unit or ns.c_nameplateSwingTimer == false then
         StopSwing(st)
         return
     end
+    local attackable = API.ReadUnitCanAttack("player", st.unit)
+    -- The plate was classified and GUID-bound while readable. In restricted
+    -- combat an opaque attackability result is unknown, not a friendly-unit
+    -- verdict; only a readable false releases the swing presentation.
+    if attackable == false then StopSwing(st); return end
     local guid = st.guid
     local owner = ns.SwingTimers
     local state = guid and owner and owner.GetNameplateState and owner:GetNameplateState(guid)
@@ -767,12 +858,16 @@ function FNP:UpdateSwingVisual(st, now)
     local state = st and st.swingState
     local _, hp = NativeRegions(st and st.root)
     if not state or not hp or not st.unit or not st.guid then StopSwing(st); return end
-    if API.ReadUnitGUID(st.unit) ~= st.guid then StopSwing(st); return end
+    local currentGUID = API.ReadUnitGUID(st.unit)
+    -- NAME_PLATE_UNIT_REMOVED remains the authoritative pooled-frame release.
+    -- Preserve the established binding while the live GUID is opaque, and stop
+    -- only when a readable GUID proves that the token was recycled.
+    if currentGUID and currentGUID ~= st.guid then StopSwing(st); return end
 
-    local f = EnsureSwing(st)
-    f:ClearAllPoints()
-    f:SetPoint("TOPLEFT", hp, "BOTTOMLEFT", 0, -1)
-    f:SetPoint("TOPRIGHT", hp, "BOTTOMRIGHT", 0, -1)
+    local f = EnsureSwing(st, hp)
+    local host = EnsureOverlay(st)
+    if not f or not BNP:_AnchorSwingFrame(f, host) then StopSwing(st); return end
+    if st.hiddenByNative or not host:IsShown() then f:Hide(); return end
 
     local remaining = (state.readyAt or now) - now
     local duration = max(0.1, tonumber(state.duration) or 2)
@@ -783,13 +878,25 @@ function FNP:UpdateSwingVisual(st, now)
     end
     if remaining > 0 then
         local progress = 1 - min(1, remaining / duration)
-        f.progress:SetValue(progress)
-        f.progress:Show()
-        f.ready:Hide()
-        f:Show()
+        if progress > 0.05 and progress < 0.95 then
+            if BNP:_ShowSwingProgress(f, progress) then
+                BNP:_SetSwingReady(f, false)
+                f:Show()
+            else
+                f:Hide()
+            end
+        elseif progress >= 0.95 and inCombat then
+            BNP:_HideSwingProgress(f)
+            BNP:_SetSwingReady(f, true)
+            f:Show()
+        else
+            BNP:_HideSwingProgress(f)
+            BNP:_SetSwingReady(f, false)
+            f:Hide()
+        end
     elseif inCombat then
-        f.progress:Hide()
-        f.ready:Show()
+        BNP:_HideSwingProgress(f)
+        BNP:_SetSwingReady(f, true)
         f:Show()
     else
         StopSwing(st)
