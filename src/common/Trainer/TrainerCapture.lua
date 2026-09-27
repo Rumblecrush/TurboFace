@@ -59,8 +59,10 @@ local function CaptureTrainerInner()
     Trainer:InitSavedVariables()
     Trainer.currentTrainerHasGeneralSkills = false
     local _, classToken = UnitClass("player")
-    local isTradeskill = IsTradeskillTrainer and IsTradeskillTrainer()
-    local professionKey = isTradeskill and Trainer:DetectTrainerProfession() or nil
+    -- The service skill line is the authoritative profession identity. Forever
+    -- can expose it while the surviving legacy IsTradeskillTrainer boolean is
+    -- false, which previously filed recipes into the current class catalog.
+    local professionKey = Trainer:DetectTrainerProfession()
     if not classToken then
         ns:Chat("Trainer", "UnitClass(\"player\") returned no class token.")
         return
@@ -167,10 +169,12 @@ local function CaptureTrainerInner()
                         bucket[spellID] = {
                             cost = cost,
                             rank = rank,
-                            status = sType,
                             requires = existing and existing.requires,
                             faction = existing and existing.faction,
                             race = existing and existing.race
+                            -- Deliberately no status=sType. Class data is
+                            -- account-wide; availability/used belongs only to
+                            -- the character currently visiting the trainer.
                         }
                     end
                 end
@@ -193,9 +197,7 @@ local function OnTrainerServiceSelectedInner(id)
     local text = fs and fs:GetText()
     local requires = text and ParseRequirementText(text)
     if not requires then return end
-    local isTradeskill = IsTradeskillTrainer and IsTradeskillTrainer()
-    local professionKey
-    if isTradeskill then professionKey = Trainer:DetectTrainerProfession() end
+    local professionKey = Trainer:DetectTrainerProfession()
     local bucket, key
     if professionKey then
         local name = Trainer:GetTrainerServiceInfoCompat(id)

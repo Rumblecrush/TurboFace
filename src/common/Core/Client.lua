@@ -93,6 +93,7 @@ Client.developmentRestrictedSettings = isForever and {
 } or {}
 Client.developmentRestrictedGates = isForever and {
     unitframes = "unitframes.master",
+    castBars = "castbars.master",
     class = "class.master",
 } or {}
 
@@ -132,6 +133,7 @@ function Client:IsGateDevelopmentRestricted(family)
     return self:IsDevelopmentRestrictionActive(self:GetGateDevelopmentRestriction(family))
 end
 
+
 -- Core runtime policy isolates lifecycle/ownership differences that cannot be
 -- inferred safely from API presence alone. Shared Core.lua consumes these
 -- capabilities rather than branching on client/build identity.
@@ -144,6 +146,10 @@ Client.corePolicy = {
     combatMeterBeforeBadge = isForever,
     extendedDiagnostics = isForever,
     developmentFeatureBypass = isForever,
+    -- Forever's Blizzard player-aura buttons keep their duration/count/cooldown
+    -- bindings across the secret combat transition. Style those native regions
+    -- while readable instead of replacing them with addon-computed text.
+    nativePlayerAuraPresentation = isForever,
 }
 
 function Client:GetCorePolicy(key)

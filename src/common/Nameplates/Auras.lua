@@ -165,36 +165,6 @@ local BUFF_COLOR_WHITE = { 1.00, 1.00, 1.00 }  -- White (non-dispellable buffs o
 local COLOR_WHITE = { 1.0, 1.0, 1.0 }
 
 -- =============================================================================
--- TEXT ANCHOR POSITIONS
--- INNER positioning: Text stays inside the icon bounds
--- =============================================================================
-local DURATION_ANCHORS = {
-    -- {textPoint, iconPoint, offsetX, offsetY}
-    TOP         = { "TOP", "TOP", 0, -2 },
-    TOPLEFT     = { "TOPLEFT", "TOPLEFT", 2, -2 },
-    TOPRIGHT    = { "TOPRIGHT", "TOPRIGHT", -2, -2 },
-    CENTER      = { "CENTER", "CENTER", 0, 0 },
-    BOTTOM      = { "BOTTOM", "BOTTOM", 0, 0 },
-    BOTTOMLEFT  = { "BOTTOMLEFT", "BOTTOMLEFT", 2, 2 },
-    BOTTOMRIGHT = { "BOTTOMRIGHT", "BOTTOMRIGHT", -2, 2 },
-}
-
--- OUTER positioning: the stack count sits just OUTSIDE the icon corner, unlike
--- the duration text above. Every offset pushes away from the icon centre.
-local STACK_ANCHORS = {
-    TOP         = { "TOP", "TOP", 0, 3 },
-    TOPLEFT     = { "TOPLEFT", "TOPLEFT", -3, 3 },
-    TOPRIGHT    = { "TOPRIGHT", "TOPRIGHT", 3, 3 },
-    CENTER      = { "CENTER", "CENTER", 0, 0 },
-    BOTTOM      = { "BOTTOM", "BOTTOM", 0, -3 },
-    BOTTOMLEFT  = { "BOTTOMLEFT", "BOTTOMLEFT", -3, -3 },
-    -- x was -3, a copy-paste of BOTTOMLEFT that pushed the count left instead
-    -- of right and made the two anchors identical. Unreachable in practice --
-    -- debuff stacks are forced to TOPRIGHT and buff stacks default to it.
-    BOTTOMRIGHT = { "BOTTOMRIGHT", "BOTTOMRIGHT", 3, -3 },
-}
-
--- =============================================================================
 -- AURA ICON CREATION
 -- Icon with square border, duration text, and stack count
 -- =============================================================================
@@ -255,11 +225,7 @@ local function CreateAuraIcon(parent)
     if cooldown then
         cooldown:SetAllPoints(icon)
         cooldown:SetFrameLevel((icon:GetFrameLevel() or 1) + 1)
-        if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
-        if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
-        if cooldown.SetSwipeColor then cooldown:SetSwipeColor(0, 0, 0, 0.68) end
-        if cooldown.SetReverse then cooldown:SetReverse(true) end
-        if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(true) end
+        ns.AuraPresentation:ConfigureCooldown(cooldown)
         cooldown:Hide()
     end
     icon.cooldown = cooldown
@@ -275,13 +241,13 @@ local function CreateAuraIcon(parent)
     -- Duration text (bottom center)
     icon.duration = textFrame:CreateFontString(nil, "OVERLAY")
     ns:StyleFont(icon.duration, nil, 10, "auras")
-    icon.duration:SetPoint("BOTTOM", icon, "BOTTOM", 0, 0)
+    ns.AuraPresentation:AnchorTimer(icon.duration, icon)
     icon.duration:SetTextColor(1, 1, 1)
 
     -- Stack count (top right)
     icon.count = textFrame:CreateFontString(nil, "OVERLAY")
     ns:StyleFont(icon.count, nil, 10, "auras")
-    icon.count:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 2, 2)
+    ns.AuraPresentation:AnchorCount(icon.count, icon)
     icon.count:SetTextColor(1, 1, 1)
 
     return icon
@@ -455,12 +421,8 @@ function ns:CacheAuraSettings()
     else
         ns.c_debuffIconHeight = auras.debuffIconHeight or 20
     end
-    ns.c_debuffFontSize = auras.debuffFontSize or 10
-    ns.c_debuffStackFontSize = auras.debuffStackFontSize or 10
     ns.c_debuffXOffset = auras.debuffXOffset or 0
     ns.c_debuffYOffset = auras.debuffYOffset or 0
-    ns.c_debuffDurationAnchor = auras.debuffDurationAnchor or "BOTTOM"
-    ns.c_debuffStackAnchor = "TOPRIGHT"   -- forced top-right (matches buffs / player-target)
 
     -- Buffs
     ns.c_showBuffs = auras.showBuffs ~= false
@@ -468,15 +430,9 @@ function ns:CacheAuraSettings()
     ns.c_maxBuffs = auras.maxBuffs or 4
     ns.c_buffIconWidth = auras.buffIconWidth or 18
     ns.c_buffIconHeight = auras.buffIconHeight or 18
-    ns.c_buffFontSize = auras.buffFontSize or 10
-    ns.c_buffStackFontSize = auras.buffStackFontSize or 10
     ns.c_buffXOffset = auras.buffXOffset or 0
     ns.c_buffYOffset = auras.buffYOffset or 0
     ns.c_buffGrowDirection = auras.buffGrowDirection or "CENTER"
-    -- Fallback matches ns.defaults.auras.buffDurationAnchor; Core/Defaults.lua
-    -- owns the canonical value (§3.1) and this used to say "BOTTOM".
-    ns.c_buffDurationAnchor = auras.buffDurationAnchor or "CENTER"
-    ns.c_buffStackAnchor = auras.buffStackAnchor or "TOPRIGHT"
     ns.c_buffIconSpacing = auras.buffIconSpacing or 2
     ns.c_buffMinDuration = auras.buffMinDuration or 0
     ns.c_buffMaxDuration = auras.buffMaxDuration or 300
@@ -705,13 +661,9 @@ end
 -- Simple release-all-then-acquire pattern for correctness.
 -- Performance comes from large pool (no frame creation mid-combat) and timer throttling.
 -- =============================================================================
-local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, spacing, growDir, fontSize, stackFontSize, durationAnchor, stackAnchor, isPersonal)
+local function DisplayAuras(container, auras, maxCount, iconWidth, spacing, growDir, isPersonal)
     container.icons = container.icons or {}
     local icons = container.icons
-
-    -- Get anchor positions
-    local durAnchor = DURATION_ANCHORS[durationAnchor] or DURATION_ANCHORS.BOTTOM
-    local stkAnchor = STACK_ANCHORS[stackAnchor] or STACK_ANCHORS.TOPRIGHT
 
     -- Release all current icons back to pool
     for i = #icons, 1, -1 do
@@ -740,16 +692,14 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
         SetBorderColor(icon, aura.debuffType, aura.canStealOrPurge, aura.isDebuff, isPersonal)
 
         -- Font sizes (stack count follows the same text size as the timer)
-        ns:StyleFont(icon.duration, nil, fontSize, "auras")
-        ns:StyleFont(icon.count, nil, fontSize, "auras")
+        ns.AuraPresentation:StyleText(icon.duration)
+        ns.AuraPresentation:StyleText(icon.count)
 
         -- Duration text position
-        icon.duration:ClearAllPoints()
-        icon.duration:SetPoint(durAnchor[1], icon, durAnchor[2], durAnchor[3], durAnchor[4])
+        ns.AuraPresentation:AnchorTimer(icon.duration, icon)
 
         -- Stack count position
-        icon.count:ClearAllPoints()
-        icon.count:SetPoint(stkAnchor[1], icon, stkAnchor[2], stkAnchor[3], stkAnchor[4])
+        ns.AuraPresentation:AnchorCount(icon.count, icon)
 
         -- Stack count text
         if aura.count > 1 then
@@ -759,11 +709,11 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
             icon.count:Hide()
         end
 
-        -- Debuff cooldown swipe. Buffs intentionally keep the clean icon-only
-        -- presentation; the requested swipe applies to nameplate debuff timers.
+        -- Every nameplate aura uses the same optional swipe treatment as the
+        -- other TurboFace aura surfaces.
         local timed = aura.expires > 0 and aura.duration and aura.duration > 0
         if icon.cooldown then
-            if aura.isDebuff and timed and CooldownFrame_Set then
+            if ns.AuraPresentation:ShowSwipe() and timed and CooldownFrame_Set then
                 if icon._cooldownExp ~= aura.expires or icon._cooldownDur ~= aura.duration then
                     CooldownFrame_Set(icon.cooldown, aura.expires - aura.duration, aura.duration, true)
                     icon._cooldownExp = aura.expires
@@ -782,7 +732,7 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
         icon.expires = aura.expires
         icon.elapsed = 0
 
-        if aura.expires > 0 then
+        if ns.AuraPresentation:ShowTimer() and aura.expires > 0 then
             -- Shared driver rather than a per-icon OnUpdate: a busy pull can have
             -- dozens of these, and each per-frame C-to-Lua dispatch costs more
             -- than the throttled work inside. AuraTimerOnUpdate is unchanged --
@@ -792,6 +742,7 @@ local function DisplayAuras(container, auras, maxCount, iconWidth, iconHeight, s
             UpdateDurationText(icon)
             icon.duration:Show()
         else
+            ns.Timers:Remove(icon)
             icon.duration:SetText("")
             icon.duration:Hide()
         end
@@ -917,12 +868,14 @@ do
 
     -- === DISPLAY (only for enabled containers) ===
     if ns.c_showDebuffs then
-        DisplayAuras(myPlate.debuffContainer, debuffCollector, ns.c_maxDebuffs, ns.c_debuffIconWidth, ns.c_debuffIconHeight, ns.c_iconSpacing, ns.c_growDirection, ns.c_debuffFontSize, ns.c_debuffStackFontSize, ns.c_debuffDurationAnchor, ns.c_debuffStackAnchor, false)
+        DisplayAuras(myPlate.debuffContainer, debuffCollector, ns.c_maxDebuffs,
+            ns.c_debuffIconWidth, ns.c_iconSpacing, ns.c_growDirection, false)
     else
         myPlate.debuffContainer.displayedCount = 0
     end
     if ns.c_showBuffs then
-        DisplayAuras(myPlate.buffContainer, buffCollector, ns.c_maxBuffs, ns.c_buffIconWidth, ns.c_buffIconHeight, ns.c_buffIconSpacing, ns.c_buffGrowDirection, ns.c_buffFontSize, ns.c_buffStackFontSize, ns.c_buffDurationAnchor, ns.c_buffStackAnchor, false)
+        DisplayAuras(myPlate.buffContainer, buffCollector, ns.c_maxBuffs,
+            ns.c_buffIconWidth, ns.c_buffIconSpacing, ns.c_buffGrowDirection, false)
     end
 
     -- Position containers immediately after display (displayedCount now accurate)

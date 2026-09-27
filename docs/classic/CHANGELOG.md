@@ -1,5 +1,21 @@
 # TurboFace Classic Changelog
 
+## 0.18.3 — aura, trainer, automation, and combat reliability
+
+- Unified the visual contract for Target, Target-of-Target, Party, Pet, and Nameplate aura rows:
+  bottom-inside countdowns, top-right stack counts, and one shared font/size/style setting.
+- Removed the redundant Nameplate-only buff/debuff text-size controls; **Timer & Stack Font Size**
+  now drives every TurboFace-rendered aura surface without changing icon size or filtering.
+- Added a shared provider-policy boundary for native player-aura presentation during secret combat;
+  Classic retains its established readable addon-timer implementation unchanged.
+- Hardened shared Trainer capture ownership and ranked-spell learned-state handling. Profession
+  services are classified from their service skill line, stale recipe contaminants and account-wide
+  class status are scrubbed, and the queue uses a cached spellbook rank fallback.
+- Added a client-policy boundary for the Forever Cast Bars restriction and a Forever-provider target
+  cadence estimator; Classic Cast Bars and all Classic swing-timer behavior remain unchanged.
+- Serialized shared gossip and quest automation onto later frames and success events, removing an
+  event-order race without changing Classic's quest-selection policy.
+
 ## 0.18.2 — unified Forever feature release
 
 - Rebuilt the Classic package from the same verified unified source baseline as the Forever release.

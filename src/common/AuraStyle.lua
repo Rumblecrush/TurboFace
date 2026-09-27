@@ -71,8 +71,15 @@ end
 local function RuntimeNeeded()
     return PlayerTargetEnabled() or ToTEnabled()
 end
-local function ShowSwipe() return C().auraShowSwipe ~= false end
-local function ShowTimer() return C().auraShowTimer ~= false end
+local function ShowSwipe()
+    return not ns.AuraPresentation or ns.AuraPresentation:ShowSwipe()
+end
+local function ShowTimer()
+    return not ns.AuraPresentation or ns.AuraPresentation:ShowTimer()
+end
+local function UseNativePlayerAuraPresentation()
+    return ns.Client and ns.Client:GetCorePolicy("nativePlayerAuraPresentation") == true
+end
 
 -- When Movers are disabled, Blizzard owns the aura chains. Apply one small
 -- presentation correction to the chain root only; every later button follows
@@ -208,7 +215,10 @@ local function GetCooldown(button)
     -- between clients, so create defensively and fall back to a bare Cooldown --
     -- this is exactly why the target worked (existing frame) but the player did
     -- not (created frame erroring on a missing template).
-    if button._tfCD then return button._tfCD end
+    if button._tfCD then
+        if ns.AuraPresentation then ns.AuraPresentation:ConfigureCooldown(button._tfCD) end
+        return button._tfCD
+    end
     local name = button.GetName and button:GetName()
     local cd = button.cooldown or button.Cooldown or (name and _G[name .. "Cooldown"])
     if not cd then
@@ -218,37 +228,53 @@ local function GetCooldown(button)
         end
         if made then
             made:SetAllPoints(IconRegion(button))
-            if made.SetDrawEdge then made:SetDrawEdge(false) end
-            if made.SetSwipeColor then made:SetSwipeColor(0, 0, 0, 0.7) end
-            -- Match the target buttons' aura swipe direction. Blizzard's existing
-            -- cooldown frames (used by the target) already wind down correctly;
-            -- a freshly created frame defaults to the ability-cooldown direction,
-            -- which looks reversed for an aura, so flip it.
-            if made.SetReverse then made:SetReverse(true) end
+            made._tfAuraStyleOwned = true
         end
         cd = made
     end
+    -- Keep the swipe in front of the icon, but reserve the next frame level
+    -- for duration/count text. Regions parented directly to the aura button
+    -- otherwise render below a child Cooldown even when they use OVERLAY.
+    if cd and cd.SetFrameLevel and button.GetFrameLevel then
+        cd:SetFrameLevel((button:GetFrameLevel() or 1) + 1)
+    end
+    if ns.AuraPresentation then ns.AuraPresentation:ConfigureCooldown(cd) end
     button._tfCD = cd
     return cd
 end
 
-local function GetTimerFS(button, cd)
-    if button._tfTimer then return button._tfTimer end
+local function GetTextFrame(button, cd)
+    local tf = button._tfTextFrame
+    if not tf then
+        tf = CreateFrame("Frame", nil, button)
+        tf:SetAllPoints(IconRegion(button))
+        button._tfTextFrame = tf
+    end
     -- Text must sit ABOVE the cooldown swipe. A FontString on the button (or on
     -- the cooldown frame) renders under the swipe, so give it its own frame with
     -- a higher frame level than the cooldown.
-    local tf = CreateFrame("Frame", nil, button)
-    tf:SetAllPoints(IconRegion(button))
     local base = button:GetFrameLevel() or 1
     if cd and cd.GetFrameLevel then
         local cl = cd:GetFrameLevel()
         if cl and cl > base then base = cl end
     end
-    tf:SetFrameLevel(base + 5)
+    tf:SetFrameLevel(base + 1)
+    return tf
+end
+
+local function GetTimerFS(button, cd)
+    if button._tfTimer then
+        GetTextFrame(button, cd)
+        return button._tfTimer
+    end
+    local tf = GetTextFrame(button, cd)
     local fs = tf:CreateFontString(nil, "OVERLAY")
     -- Countdown sits along the bottom edge, just inside the icon.
-    fs:SetPoint("BOTTOM", IconRegion(button), "BOTTOM", 0, 1)
-    button._tfTextFrame = tf
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorTimer(fs, IconRegion(button))
+    else
+        fs:SetPoint("BOTTOM", IconRegion(button), "BOTTOM", 0, 1)
+    end
     button._tfTimer = fs
     return fs
 end
@@ -275,8 +301,12 @@ local function ApplyTimerFont(button, sizeOffset)
     button._tfFontGen = fontGen
     button._tfFontScale = s
     button._tfFontOffset = sizeOffset
-    local size = ((C().auraTimerSize or 14) + sizeOffset) / s
-    ns:StyleFont(button._tfTimer, nil, size, "auras")
+    if ns.AuraPresentation and sizeOffset == 0 then
+        ns.AuraPresentation:StyleText(button._tfTimer, s)
+    else
+        local size = ((C().auraTimerSize or 14) + sizeOffset) / s
+        ns:StyleFont(button._tfTimer, nil, size, "auras")
+    end
 end
 
 -- Catch Blizzard's stack-count FontString (e.g. Lightning Shield's charges),
@@ -298,17 +328,125 @@ local function StyleCount(button)
     if button._tfTextFrame and cnt.GetParent and cnt:GetParent() ~= button._tfTextFrame then
         cnt:SetParent(button._tfTextFrame)
     end
-    cnt:ClearAllPoints()
-    cnt:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorCount(cnt, IconRegion(button))
+    else
+        cnt:ClearAllPoints()
+        cnt:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    end
     -- Guarded so SetFont only runs when the timer-font settings or the button
     -- scale actually change. Counter-scaled like the timer text.
     local s = ButtonScale(button)
     if button._tfCountGen ~= fontGen or button._tfCountScale ~= s then
         button._tfCountGen = fontGen
         button._tfCountScale = s
-        local size = math.max(8, C().auraTimerSize or 14) / s
-        ns:StyleFont(cnt, nil, size, "auras")
+        if ns.AuraPresentation then
+            ns.AuraPresentation:StyleText(cnt, s)
+        else
+            local size = math.max(8, C().auraTimerSize or 14) / s
+            ns:StyleFont(cnt, nil, size, "auras")
+        end
     end
+end
+
+local FindBlizzDurationFS
+
+local function InstallNativeDurationAnchorGuard(button, duration)
+    if not duration or duration._tfAuraAnchorGuardInstalled
+        or type(hooksecurefunc) ~= "function" or type(duration.SetPoint) ~= "function"
+    then
+        return
+    end
+    duration._tfAuraAnchorGuardInstalled = true
+    hooksecurefunc(duration, "SetPoint", function(self)
+        if self._tfAuraAnchorGuardActive or not button._tfIsPlayerAura
+            or not PlayerTargetEnabled() or not UseNativePlayerAuraPresentation()
+            or not ShowTimer()
+        then
+            return
+        end
+        if self.IsForbidden and self:IsForbidden() then return end
+        self._tfAuraAnchorGuardActive = true
+        ns.AuraPresentation:AnchorTimer(self, IconRegion(button))
+        self._tfAuraAnchorGuardActive = nil
+    end)
+end
+
+-- Forever's native player aura buttons retain Blizzard-bound duration/count/
+-- cooldown state when those values become secret in combat. Prepare those
+-- native regions while the aura domain is readable, then leave them untouched
+-- through the restricted interval. Classic keeps the addon-owned timer path.
+local function StyleNativePlayerPresentation(button, cd, timed)
+    if not button._tfIsPlayerAura or not UseNativePlayerAuraPresentation() then return false end
+
+    -- Blizzard owns the player duration/count values, but both regions must be
+    -- parented to a frame above TurboFace's child Cooldown. Draw-layer alone is
+    -- insufficient across frame boundaries and made the swipe darken the text.
+    local textFrame = GetTextFrame(button, cd)
+    StyleCount(button)
+    local duration = FindBlizzDurationFS(button)
+    if not duration or (type(duration.SetFontObject) ~= "function"
+        and type(duration.SetFont) ~= "function")
+    then
+        return false
+    end
+    button._tfNativeDuration = duration
+    if duration.GetParent and duration.SetParent and duration:GetParent() ~= textFrame then
+        duration:SetParent(textFrame)
+    end
+    InstallNativeDurationAnchorGuard(button, duration)
+
+    duration._tfAllowBlizzDuration = true
+    duration._tfHidden = nil
+    if ns.AuraPresentation then
+        ns.AuraPresentation:StyleText(duration)
+        ns.AuraPresentation:AnchorTimer(duration, IconRegion(button))
+    end
+    -- nil means the aura is currently opaque: preserve Blizzard's last secure
+    -- visibility decision as well as TurboFace's existing swipe state.
+    if timed ~= nil then
+        if ShowTimer() and timed then
+            if duration.SetAlpha then duration:SetAlpha(1) end
+            duration:Show()
+        else
+            duration:Hide()
+        end
+    end
+
+    -- A button may have been styled by an older pass before the provider
+    -- became active. Retire only TurboFace's duplicate text; Blizzard keeps
+    -- ownership of the native duration binding and cooldown animation.
+    button._tfExpiration = nil
+    button._tfKey = nil
+    active[button] = nil
+    if button._tfTimer then
+        button._tfTimer:SetText("")
+        button._tfTimer:Hide()
+    end
+    return true
+end
+
+local nativePlayerPositionHooked = false
+local function InstallNativePlayerPositionHook()
+    if nativePlayerPositionHooked or not UseNativePlayerAuraPresentation() then return end
+    local mixin = _G.AuraButtonMixin
+    if type(mixin) ~= "table" or type(mixin.OnUpdate) ~= "function"
+        or type(hooksecurefunc) ~= "function"
+    then
+        return
+    end
+    nativePlayerPositionHooked = true
+    hooksecurefunc(mixin, "OnUpdate", function(button)
+        if not button or not button._tfIsPlayerAura or not ShowTimer() then return end
+        local duration = button._tfNativeDuration
+        if not duration then return end
+        if duration.IsForbidden and duration:IsForbidden() then return end
+        -- Blizzard recalculates the native duration text and then restores its
+        -- below-icon anchor every frame. Correct only that anchor after the
+        -- native update; never inspect the secret time value or replace its
+        -- authoritative text/color.
+        ns.AuraPresentation:AnchorTimer(duration, IconRegion(button))
+    end)
 end
 
 -- Hide Blizzard's own duration text below the PLAYER buff/debuff icons (it's
@@ -317,7 +455,7 @@ end
 -- an unnamed direct-region FontString with no table key, so fall back to a
 -- region scan (our timer lives on a child frame and the count FS is excluded,
 -- so the only direct FontString left is the duration).
-local function FindBlizzDurationFS(button)
+FindBlizzDurationFS = function(button)
     local nm = button.GetName and button:GetName()
     local dur = button.duration or button.Duration or (nm and _G[nm .. "Duration"])
     if dur then return dur end
@@ -434,6 +572,8 @@ local function StyleButton(button, scale, duration, expirationTime, timerFontOff
             if cd.SetHideCountdownNumbers then cd:SetHideCountdownNumbers(true) end
         end
     end
+
+    if StyleNativePlayerPresentation(button, cd, timed) then return end
 
     local fs = GetTimerFS(button, cd)
     ApplyTimerFont(button, timerFontOffset)
@@ -797,11 +937,19 @@ local function StyleModernPlayerAuras(container, filter, scale)
     local scan    -- built lazily, only when the direct lookup fails
     local texScan -- built lazily, only when no instance/index route worked
     for _, btn in pairs(frames) do
-        if type(btn) == "table" and btn.IsShown then
+        if type(btn) == "table" and btn.IsShown and not btn.isAuraAnchor then
+            -- Modern BuffFrame/DebuffFrame creates its complete button pool at
+            -- load time. Prepare every slot while values are readable so a
+            -- previously-hidden debuff can become active after combat makes
+            -- aura data secret without falling back to Blizzard's old layout.
+            btn._tfIsPlayerAura = true
             if not btn:IsShown() then
-                ClearButton(btn)
+                if UseNativePlayerAuraPresentation() then
+                    StyleNativePlayerPresentation(btn, GetCooldown(btn), false)
+                else
+                    ClearButton(btn)
+                end
             else
-                btn._tfIsPlayerAura = true
                 local handled = false
                 local instID = btn.auraInstanceID
                 -- Do not even truth-test a secret auraInstanceID.  The native
@@ -859,7 +1007,18 @@ local function StyleModernPlayerAuras(container, filter, scale)
                         end
                     end
                 end
-                if not handled then ClearButton(btn) end
+                if not handled then
+                    if UseNativePlayerAuraPresentation() then
+                        -- Forever can make aura identity/duration unreadable
+                        -- between otherwise-readable updates. The native icon
+                        -- remains authoritative during that interval, so keep
+                        -- the last securely prepared swipe instead of erasing
+                        -- it because an addon-side lookup temporarily failed.
+                        StyleNativePlayerPresentation(btn, GetCooldown(btn), nil)
+                    else
+                        ClearButton(btn)
+                    end
+                end
             end
         end
     end
@@ -869,6 +1028,11 @@ end
 function AS:StylePlayer()
     if not PlayerTargetEnabled() then return end
     if not AuraDataReadable() then
+        -- Forever's native duration/count/cooldown regions were prepared before
+        -- combat and remain Blizzard-bound to secret aura state. Mutating or
+        -- suspending them here is both unnecessary and what previously made the
+        -- styling disappear at combat entry.
+        if UseNativePlayerAuraPresentation() then return end
         for _, container in ipairs({ _G.BuffFrame, _G.DebuffFrame }) do
             local frames = container and container.auraFrames
             if type(frames) == "table" then
@@ -1027,6 +1191,7 @@ end
 function AS:Init()
     if initialized or not RuntimeNeeded() then return end
     initialized = true
+    InstallNativePlayerPositionHook()
 
     -- Activate LibClassicDurations only when at least one AuraStyle consumer
     -- (Player/Target or ToT) needs duration resolution. A disabled Auras family

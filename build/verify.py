@@ -193,9 +193,9 @@ def merged_expected(flavor: str) -> dict[str, str]:
 def main() -> None:
     classic_toc_source = (ROOT / "src" / "classic" / "TurboFace.toc").read_text(errors="replace")
     forever_toc_source = (ROOT / "src" / "forever" / "TurboFace.toc").read_text(errors="replace")
-    if "## Version: 0.18.2" not in classic_toc_source:
+    if "## Version: 0.18.3" not in classic_toc_source:
         raise SystemExit("Classic version contract changed unexpectedly")
-    if "## Version: 0.18.2" not in forever_toc_source:
+    if "## Version: 0.18.3" not in forever_toc_source:
         raise SystemExit("Forever version contract changed unexpectedly")
 
     common = set(inventory(ROOT / "src" / "common"))
@@ -346,6 +346,9 @@ def main() -> None:
             raise SystemExit(f"shared Automation bypasses compatibility helper: {required}")
     if "SelectQuestWithConfirmation" not in automation or "questPendingSerial" not in automation:
         raise SystemExit("shared Automation lost serialized quest-selection confirmation")
+    for marker in ("DeferQuestAction", 'C_Timer.After(0, Run)', 'C_Timer.After(0.20, SelectWhenStable)'):
+        if marker not in automation:
+            raise SystemExit(f"shared Automation lost deferred NPC-interaction safety: {marker}")
     if "PLAYER_DEAD" not in automation or "ns.API.ReleaseSpirit()" not in automation:
         raise SystemExit("shared Automation must use the client action adapter for PvP release")
     if "M:GetFastLootDiagnostics" not in system_tweaks or "IsMasterLoot" not in system_tweaks:
@@ -416,6 +419,10 @@ def main() -> None:
         raise SystemExit("shared Trainer init is missing guarded modern spell-service resolution")
     if "Trainer:GetTrainerServiceInfoCompat(i)" not in trainer_capture:
         raise SystemExit("shared Trainer capture bypasses the service normalization boundary")
+    if "local professionKey = Trainer:DetectTrainerProfession()" not in trainer_capture:
+        raise SystemExit("shared Trainer capture does not derive profession ownership from service skill lines")
+    if "Deliberately no status=sType. Class data is" not in trainer_capture:
+        raise SystemExit("shared Trainer capture can persist character-local status into account-wide class data")
     if "TooltipDataProcessor.AddTooltipPostCall" not in pet_capture or "ns.API.ReadUnitHealth" not in pet_capture:
         raise SystemExit("shared pet merchant capture is missing modern-tooltip/readable-health fallbacks")
 
@@ -435,6 +442,8 @@ def main() -> None:
         raise SystemExit("shared TrainingQueue lost authoritative numeric spell matching")
     if "ns.API and ns.API.IsKnownSpellID" not in trainer_queue:
         raise SystemExit("shared TrainingQueue bypasses the cross-client known-spell adapter")
+    if "Trainer:IsClassSpellKnown" not in trainer_queue:
+        raise SystemExit("shared TrainingQueue bypasses spellbook rank-family learned state")
     if "IS_TARGET_FOREVER_BUILD" in trainer_skill_data:
         raise SystemExit("shared SkillData regressed a direct Forever build check")
     if "TrainerProviderUsesDetailedWeaponMasterSources" not in trainer_skill_data:
@@ -443,6 +452,14 @@ def main() -> None:
         raise SystemExit("shared SkillData is missing provider-owned modern profession-rank fallback")
     if "target.requirementText = captured.requires" not in trainer_skill_data:
         raise SystemExit("shared SkillData must keep human requirement text separate from prerequisite spell IDs")
+    for required in (
+        "function Trainer:GetKnownSpellbookRanks",
+        "function Trainer:IsClassSpellKnown",
+        "function Trainer:ScrubProfessionRecipesFromClassData",
+        "function Trainer:ScrubClassTrainerTransientStatus",
+    ):
+        if required not in trainer_skill_data:
+            raise SystemExit(f"shared SkillData missing trainer isolation contract: {required}")
 
     forever_schema = ROOT / "src" / "forever" / "Core" / "ForeverSchema.lua"
     if not forever_schema.is_file():
@@ -697,11 +714,11 @@ def main() -> None:
     source_map = (ROOT / "docs" / "SOURCE_MAP.md").read_text(errors="replace")
     strategy = (ROOT / "docs" / "MULTICLIENT_STRATEGY.md").read_text(errors="replace")
     for marker in (
-        "**Forever:** 0.18.2 / Interface 16001",
+        "**Forever:** 0.18.3 / Interface 16001",
         "| Byte-identical same-path files | 176 |",
         "| Same-path but different contents | 5 |",
-        "| Forever-only paths | 13 |",
-        "The union is 195 relative paths.",
+        "| Forever-only paths | 14 |",
+        "The union is 196 relative paths.",
         "| Byte-identical | 107 |",
     ):
         if marker not in source_map:
@@ -729,7 +746,7 @@ def main() -> None:
     forever_package = merged_expected("forever")
     same_package_paths = set(classic_package) & set(forever_package)
     identical_package_paths = {rel for rel in same_package_paths if classic_package[rel] == forever_package[rel]}
-    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 194, 181, 176):
+    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 195, 181, 176):
         raise SystemExit(
             "package inventory contract drifted: "
             f"classic={len(classic_package)} forever={len(forever_package)} "
@@ -754,6 +771,23 @@ def main() -> None:
             raise SystemExit(f"shared AuraStyle missing protected-aura contract: {required}")
     if "IS_TARGET_FOREVER_BUILD" in aura_style or ":IsForever()" in aura_style:
         raise SystemExit("shared AuraStyle contains a direct Forever build branch")
+    mover_auras = (ROOT / "src" / "common" / "Movers" / "Auras.lua").read_text(errors="replace")
+    if "ns.MoverAuraProvider" not in mover_auras or "IS_TARGET_FOREVER_BUILD" in mover_auras:
+        raise SystemExit("shared target-aura movers lost their client provider boundary")
+    forever_mover_auras = (ROOT / "src" / "forever" / "Movers" / "ForeverAuraAdapter.lua").read_text(errors="replace")
+    for required in (
+        'CreateFrame, "AuraContainer"',
+        '"CustomAuraContainerTemplate"',
+        'return "targettarget", false, 4',
+        'Safe(id .. " unit", controller.frame, "SetUnit", controller.unit)',
+        'function Provider:InvalidateUnit(unit)',
+        'and UnitPresent(unit)',
+        'function SuppressNativeTargetAuras()',
+        'SetMouseMotionEnabled',
+        'SetMouseClickEnabled',
+    ):
+        if required not in forever_mover_auras:
+            raise SystemExit(f"Forever target-aura mover adapter lost secret-safe renderer contract: {required}")
     for flavor in ("classic", "forever"):
         compat = (ROOT / "src" / flavor / "Core" / "Compat.lua").read_text(errors="replace")
         for required in ("ShouldAurasBeSecret", "GetReadableAuraDataByIndex", "GetReadableAuraDataByAuraInstanceID"):
@@ -791,6 +825,7 @@ def main() -> None:
         '"bubbleNameplates.friendlyPlayerDamagedOnly"',
         '"bubbleNameplates.friendlyNPCDamagedOnly"',
         'unitframes = "unitframes.master"',
+        'castBars = "castbars.master"',
         'class = "class.master"',
     ):
         if restriction not in client_policy:
@@ -803,6 +838,7 @@ def main() -> None:
     ):
         if required not in options_gui:
             raise SystemExit(f"OptionsGUI missing development restriction contract: {required}")
+    swing_timers = (ROOT / "src" / "common" / "Combat" / "SwingTimers.lua").read_text(errors="replace")
     core_source = (ROOT / "src" / "common" / "Core.lua").read_text(errors="replace")
     if 'cmd == "dev"' not in core_source or 'action == "bypass"' not in core_source:
         raise SystemExit("shared Core missing /tf dev bypass command")
@@ -912,6 +948,9 @@ def main() -> None:
         "function ns.SwingTimerProviderCanReadNameplateAttackSpeed",
         "function ns.SwingTimerProviderUsesThreatSituationEngagement",
         "function ns.SwingTimerProviderUsesCharacterDamageCapture",
+        "function ns.SwingTimerProviderUsesTargetCombatEstimator",
+        "function ns.SwingTimerProviderObserveTargetCombat",
+        "function ns.SwingTimerProviderResetTargetCombat",
     ):
         if contract not in swing_provider:
             raise SystemExit(f"shared Swing Timer capability contract missing: {contract}")
@@ -923,6 +962,8 @@ def main() -> None:
         "ns.SwingTimerProviderCanReadNameplateAttackSpeed()",
         "ns.SwingTimerProviderUsesThreatSituationEngagement()",
         "ns.SwingTimerProviderInstallCharacterDamageCapture(ST, eventFrame)",
+        "ns.SwingTimerProviderUsesTargetCombatEstimator()",
+        "ns.SwingTimerProviderObserveTargetCombat(unit, action",
         "swingEventHandlers.PLAYER_SWING",
     ):
         if required not in swing_timers:
@@ -933,6 +974,8 @@ def main() -> None:
         "function ST:ScanCharacterStatsDamage",
         "function ST:ScanCharacterFrameDamage",
         "function Forever:InstallCharacterDamageCapture",
+        "function Forever:UsesTargetCombatEstimator",
+        "function Forever:ObserveTargetCombat",
     ):
         if required not in forever_swing:
             raise SystemExit(f"Forever Swing Timer adapter lost Character damage capture: {required}")
@@ -1043,6 +1086,13 @@ def main() -> None:
                 forever_uf_pos = toc.find("UnitFrames\\ForeverNativeAdapter.lua")
                 if forever_uf_pos < 0 or not (unitframes_pos < forever_uf_pos < predictions_pos):
                     raise SystemExit("forever: native-safe UnitFrame provider must load after UnitFrames core and before optional consumers")
+
+                mover_auras_pos = toc.find("Movers\\Auras.lua")
+                forever_mover_auras_pos = toc.find("Movers\\ForeverAuraAdapter.lua")
+                mover_systems_pos = toc.find("Movers\\Systems.lua")
+                if min(mover_auras_pos, forever_mover_auras_pos, mover_systems_pos) < 0 \
+                        or not (mover_auras_pos < forever_mover_auras_pos < mover_systems_pos):
+                    raise SystemExit("forever: target-aura mover adapter must load after shared aura anchors and before mover initialization")
 
             plus_provider_pos = toc.find("Plus\\Provider.lua")
             plus_automation_pos = toc.find("Plus\\Automation.lua")

@@ -331,7 +331,7 @@ function Compat:UpdateSecretRestrictions(reason)
             ("auras=%s cooldowns=%s"):format(tostring(auras), tostring(cooldowns)))
         if C_Timer and C_Timer.After then
             C_Timer.After(0, function()
-                if ns.AuraStyle and ns.AuraStyle.ApplySettings then ns.AuraStyle:ApplySettings() end
+                if ns.AuraStyle and ns.AuraStyle.Refresh then ns.AuraStyle:Refresh() end
                 if ns.PartyAuras and ns.PartyAuras.Refresh then ns.PartyAuras:Refresh() end
                 if ns.UpdateAllPlates then ns:UpdateAllPlates() end
             end)

@@ -1,5 +1,64 @@
 # TurboFace Forever Changelog
 
+## 0.18.3 — aura, trainer, automation, and target swing recovery
+
+- Centered detached Nameplate buff/debuff rows against the full Forever nameplate root instead of
+  the narrower native HP bar; left/right growth modes remain aligned to the HP edges.
+- Fixed Player buff/debuff styling disappearing when combat activates Forever's secret aura domain.
+  TurboFace now prepares Blizzard's native player duration, count, and cooldown regions while they
+  are readable, then preserves those Blizzard-bound regions through combat instead of suspending
+  them or attempting addon-side secret duration calculations.
+- Kept Player aura cooldown swipes in front of icon artwork but behind duration and stack text by
+  moving Blizzard-owned text regions onto a dedicated higher frame layer.
+- Preserved the last valid Player aura swipe and native duration visibility when a transient
+  secret-value transition prevents an addon-side aura lookup from resolving the current button.
+- Prepared the complete preallocated BuffFrame and DebuffFrame button pools, including hidden
+  debuff slots that commonly become active for the first time only after combat has begun.
+- Kept native player countdowns bottom-inside by correcting only their anchor after Blizzard's
+  per-frame duration update resets it below the icon; Blizzard continues to own the secret text,
+  countdown color, and value.
+- Covered DebuffFrame's additional post-update grid-layout reset with a per-duration anchor guard,
+  so both Blizzard reset paths converge on the same bottom-inside position.
+- Excluded DebuffFrame's secure private-aura anchor placeholders from ordinary FontString styling;
+  their `Duration` children are Frames, not text regions. The shared font helper now also fails
+  closed for any non-font region.
+- Corrected restriction-state reconciliation to call AuraStyle's actual `Refresh` entry point, so
+  leaving a restricted interval reliably reapplies any deferred presentation changes.
+- Unified Target, Target-of-Target, Party, Pet, and Nameplate AuraContainer presentation with the
+  shared aura style: bottom-inside countdowns, top-right stacks, and one font/size/style source.
+- Forever's secret-backed providers apply that contract only during safe button initialization and
+  rebuild their detached containers when swipe, timer, or font-size presentation changes.
+- Restored Target Buffs, Target Debuffs, and Target-of-Target Debuffs mover contents with
+  Forever-owned detached Blizzard `AuraContainer`s. Shared mover anchors and settings remain
+  portable, while Blizzard owns secret aura queries, duration binding, sorting, and updates.
+- Added an explicit unit-token release/rebind lifecycle on target and target-of-target changes, so
+  a container is disabled and hidden as soon as its unit disappears instead of retaining phantom
+  icons from the previous target.
+- Suppressed the combined Blizzard target aura container through its native max-count/visibility
+  interface while TurboFace owns both detached target rows, eliminating duplicate stock icons.
+- Enabled the intrinsic Blizzard AuraButton tooltip channel on TurboFace's detached icons while
+  explicitly disabling mouse clicks and aura cancellation; click-through still suppresses hover.
+- Replaced the temporary target-aura descendant diagnostic with secret-safe inspection so an
+  inaccessible Blizzard debug name cannot taint or abort the probe.
+- Fixed profession trainer services leaking into the account-wide class catalog when Forever's
+  legacy `IsTradeskillTrainer` result disagreed with the service skill line. Existing recipe
+  contaminants are removed through LibProfessionDB identities, including Barbecued Buzzard Wing.
+- Fixed learned ranked abilities such as Rend remaining in Class Training or its queue. Current
+  character state now falls back to a cached spellbook name/rank snapshot, and character-local
+  trainer status is no longer persisted into account-wide class data.
+- Restored the Forever Target Swing Timer with a client-owned `UNIT_COMBAT` cadence estimator. It
+  learns plausible hit-to-hit intervals while the selected hostile targets the player, resynchronizes
+  on every qualifying melee result, and safely tolerates secret target booleans.
+- Disabled the incomplete TurboFace Cast Bars master on Forever while retaining player and target
+  swing timers. The cast-bar path remains available to developers through `/tf dev bypass` and
+  Classic behavior is unchanged.
+- Deferred gossip and quest automation actions beyond Blizzard's originating event callback so the
+  client can finish constructing each interaction state before TurboFace advances it.
+- Serialized post-accept and post-turn-in rescans behind their success events, preventing stale
+  gossip data from intermittently latching an invisible NPC interaction until range loss.
+- Delayed single-option gossip long enough for quest automation to claim quest NPCs first, and
+  cancel that delayed action when the gossip interaction has already advanced or closed.
+
 ## 0.18.2 — Forever nameplate power and compatibility cleanup
 
 - Added a prepared Forever implementation of **Overlap Power Bar** using a detached addon-owned

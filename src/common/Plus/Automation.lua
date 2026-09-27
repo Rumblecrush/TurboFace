@@ -120,16 +120,35 @@ local function SelectSingleQuestFreeOption()
     return false
 end
 
-local function OnGossipShow()
-    local p = Settings()
-    if not p.automateGossip then return end
-    if p.automateSpiritHealer and UnitIsGhost("player") then return end
+local gossipSelectionSerial = 0
+local function OnGossipAutomation(_, event)
+    gossipSelectionSerial = gossipSelectionSerial + 1
+    if event ~= "GOSSIP_SHOW" then return end
 
-    SelectSingleQuestFreeOption()
+    -- GOSSIP_SHOW can arrive before the client has populated its quest arrays,
+    -- and quest automation has its own listener for the same event. Waiting a
+    -- fraction of a second lets the serialized quest pump claim quest NPCs
+    -- first. GOSSIP_CLOSED invalidates this callback when a quest transition
+    -- has already advanced the interaction.
+    local serial = gossipSelectionSerial
+    local function SelectWhenStable()
+        if serial ~= gossipSelectionSerial then return end
+        local p = Settings()
+        if not p.automateGossip then return end
+        if p.automateSpiritHealer and UnitIsGhost("player") then return end
+        SelectSingleQuestFreeOption()
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.20, SelectWhenStable)
+    else
+        SelectWhenStable()
+    end
 end
 
 function M:RefreshGossip()
-    SetEvents("gossip", Settings().automateGossip == true, OnGossipShow, "GOSSIP_SHOW")
+    gossipSelectionSerial = gossipSelectionSerial + 1
+    SetEvents("gossip", Settings().automateGossip == true, OnGossipAutomation,
+        "GOSSIP_SHOW", "GOSSIP_CLOSED")
 end
 
 -- ---------------------------------------------------------------------------
@@ -148,10 +167,26 @@ local questInteractionOpen = false
 local questPendingKind
 local questPendingID
 local questPendingSerial = 0
+local questActionSerial = 0
 local ScheduleQuestSelectionPump
 
 local function ClearQuestSet(set)
     for key in pairs(set) do set[key] = nil end
+end
+
+local function DeferQuestAction(callback)
+    questActionSerial = questActionSerial + 1
+    local serial = questActionSerial
+    local function Run()
+        if serial ~= questActionSerial then return end
+        if IsShiftKeyDown and IsShiftKeyDown() then return end
+        callback(Settings())
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, Run)
+    else
+        Run()
+    end
 end
 
 local function ResetQuestInteraction(guid)
@@ -410,8 +445,10 @@ local function OnQuestAutomation(_, event, arg1)
             RefreshQuestInteractionIdentity()
         end
         questInteractionOpen = true
-        questPumpSerial = questPumpSerial + 1
-        DriveQuestSelection(p)
+        -- Let Blizzard finish constructing the gossip/quest interaction before
+        -- invoking a selector. Calling it synchronously from GOSSIP_SHOW can
+        -- advance the server interaction before the corresponding UI is ready.
+        ScheduleQuestSelectionPump()
     elseif event == "GOSSIP_CLOSED" then
         if arg1 then
             questInteractionOpen = true
@@ -425,28 +462,29 @@ local function OnQuestAutomation(_, event, arg1)
         local guid = UnitGUID and UnitGUID("npc") or nil
         if not questInteractionOpen then ResetQuestInteraction(guid) end
         questInteractionOpen = true
-        questPumpSerial = questPumpSerial + 1
         RefreshQuestInteractionIdentity()
-        SelectQuestGreeting(p)
+        ScheduleQuestSelectionPump()
     elseif event == "QUEST_DETAIL" then
-        if p.autoQuestAccept and AcceptQuest then
-            ConfirmPendingQuest("available")
-            AcceptQuest()
-            ScheduleQuestSelectionPump()
-        end
+        ConfirmPendingQuest("available")
+        DeferQuestAction(function(latest)
+            if latest.autoQuestAccept and AcceptQuest then AcceptQuest() end
+        end)
     elseif event == "QUEST_PROGRESS" then
         ConfirmPendingQuest("active")
-        if p.autoQuestTurnIn and IsQuestCompletable and IsQuestCompletable() and CompleteQuest then
-            CompleteQuest()
-        end
+        DeferQuestAction(function(latest)
+            if latest.autoQuestTurnIn and IsQuestCompletable and IsQuestCompletable()
+                and CompleteQuest then
+                CompleteQuest()
+            end
+        end)
     elseif event == "QUEST_COMPLETE" and p.autoQuestTurnIn and GetNumQuestChoices and GetQuestReward then
-        local choices = GetNumQuestChoices() or 0
-        -- One choice is not a choice in practice; two or more must remain
-        -- manual so TurboFace never guesses between meaningful rewards.
-        if choices <= 1 then
-            GetQuestReward(choices == 1 and 1 or 0)
-            ScheduleQuestSelectionPump()
-        end
+        DeferQuestAction(function(latest)
+            if not latest.autoQuestTurnIn or not GetNumQuestChoices or not GetQuestReward then return end
+            local choices = GetNumQuestChoices() or 0
+            -- One choice is not a choice in practice; two or more must remain
+            -- manual so TurboFace never guesses between meaningful rewards.
+            if choices <= 1 then GetQuestReward(choices == 1 and 1 or 0) end
+        end)
     elseif event == "QUEST_ACCEPTED" then
         if arg1 then questProcessedAvailable[arg1] = true end
         if questPendingKind == "available" and (not arg1 or arg1 == questPendingID) then
@@ -537,7 +575,10 @@ end
 function M:RefreshQuests()
     local p = Settings()
     local active = p.autoQuestAccept == true or p.autoQuestTurnIn == true
-    if not active then ResetQuestInteraction(nil) end
+    if not active then
+        questActionSerial = questActionSerial + 1
+        ResetQuestInteraction(nil)
+    end
     SetEvents("quests", active, OnQuestAutomation,
         "GOSSIP_SHOW", "GOSSIP_CLOSED", "GOSSIP_OPTIONS_REFRESHED", "QUEST_GREETING",
         "QUEST_DETAIL", "QUEST_PROGRESS", "QUEST_COMPLETE", "QUEST_ACCEPTED",

@@ -2381,8 +2381,6 @@ local function BuildGlobalTab(c)
     y = Slider  (c, y, 0, W, "Debuff Y Offset (+Up / -Down)", "auras.debuffYOffset", -50, 50, 1, false)
     y = Slider  (c, y, 0, W, "Max Buffs",         "auras.maxBuffs",          1, 8,  1, false)
     y = Slider  (c, y, 0, W, "Buff Icon Size",    "auras.buffIconWidth",     10, 40, 1, false)
-    y = Slider  (c, y, 0, W, "Debuff Text Size",  "auras.debuffFontSize",    6, 20, 1, false)
-    y = Slider  (c, y, 0, W, "Buff Text Size",    "auras.buffFontSize",      6, 20, 1, false)
     y = Dropdown(c, y, 0, W, "Debuff Border",     "auras.borderStyle",
         {{name="Blizzard (rounded)",value="BLIZZARD"},{name="Pixel (square)",value="PIXEL"}})
     y = Dropdown(c, y, 0, W, "Buff Filter",       "auras.buffFilterMode",
@@ -2390,21 +2388,21 @@ local function BuildGlobalTab(c)
          {name="Whitelist Only",value="WHITELIST_ONLY"},{name="All",value="ALL"},{name="Disabled",value="DISABLED"}})
     y = y - 6
 
-    -- Player/target buff & debuff styling (AuraStyle) -------------------------
+    -- Shared buff & debuff presentation (all TurboFace aura surfaces) --------
     do
         local p, py = SectionParent(c, y)
         local lbl = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetPoint("TOPLEFT", p, "TOPLEFT", 0, py - 2)
-        lbl:SetText("BUFFS & DEBUFFS (SWIPE + TIMER)")
+        lbl:SetText("SHARED AURA STYLE (ALL FRAMES)")
         lbl:SetTextColor(0, 0.8, 1)
         y = y - 22
     end
-    y = Checkbox(c, y, 0, "Enable aura styling (swipe + timer text)", "auraEnabled")
+    y = Checkbox(c, y, 0, "Enable player/target aura styling", "auraEnabled")
     y = CheckboxRow(c, y, "Show cooldown swipe", "auraShowSwipe", "Show timer text", "auraShowTimer")
     y = y - 4
     y = Dropdown(c, y, 0, W, "Aura Font", "auras.font", FontOptions(), RefreshAuraOptions)
     y = Dropdown(c, y, 0, W, "Aura Text Style", "auras.textStyle", STYLE_OPTS, RefreshAuraOptions)
-    y = Slider(c, y, 0, W, "Timer Font Size", "auraTimerSize", 8, 24, 1, false, RefreshAuraOptions)
+    y = Slider(c, y, 0, W, "Timer & Stack Font Size", "auraTimerSize", 8, 24, 1, false, RefreshAuraOptions)
     y = y - 4
     y = Slider(c, y, 0, W, "Target Buff Size",   "auraTargetBuffScale",   0.5, 2.0, 0.05, true)
     y = Slider(c, y, 0, W, "Target Debuff Size", "auraTargetDebuffScale", 0.5, 2.0, 0.05, true)

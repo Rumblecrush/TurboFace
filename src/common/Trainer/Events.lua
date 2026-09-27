@@ -48,6 +48,7 @@ TrainerEventHandler = function(self, event, arg1, arg2)
         if Trainer.EndTrainingQueueVisit then Trainer:EndTrainingQueueVisit() end
         return
     elseif event == "TRAINER_SHOW" or event == "TRAINER_UPDATE" then
+        if Trainer.InvalidateKnownSpellbookRanks then Trainer:InvalidateKnownSpellbookRanks() end
         Trainer.trainerWindowOpen = true
         if event == "TRAINER_SHOW" and Trainer.BeginTrainingQueueVisit then Trainer:BeginTrainingQueueVisit() end
         if event == "TRAINER_UPDATE" and Trainer.TrainingQueueTrainerUpdated then Trainer:TrainingQueueTrainerUpdated() end
@@ -104,6 +105,9 @@ TrainerEventHandler = function(self, event, arg1, arg2)
             if Trainer.ProcessTrainingQueue then Trainer:ProcessTrainingQueue() end
         end
     elseif event == "SPELLS_CHANGED" or (event == "UNIT_PET" and arg1 == "player") then
+        if event == "SPELLS_CHANGED" and Trainer.InvalidateKnownSpellbookRanks then
+            Trainer:InvalidateKnownSpellbookRanks()
+        end
         if C_Timer then
             if not petSyncScheduled then
                 petSyncScheduled = true
