@@ -1,10 +1,10 @@
 # TurboFace source map
 
-**Audit date:** 2026-09-25
+**Audit date:** 2026-09-27
 
-**Classic:** 0.18.2 / Interface 11509
+**Classic:** 0.18.3 / Interface 11509
 
-**Forever:** 0.18.2 / Interface 16001
+**Forever:** 0.18.3 / Interface 16001
 
 This document describes the current physical source and package ownership. It
 is not a feature-parity matrix: one differing line can represent a critical
@@ -15,14 +15,14 @@ protected-frame or secret-value boundary.
 | Class | Count |
 |---|---:|
 | Classic packaged files | 182 |
-| Forever packaged files | 194 |
+| Forever packaged files | 195 |
 | Same relative path | 181 |
 | Byte-identical same-path files | 176 |
 | Same-path but different contents | 5 |
 | Classic-only paths | 1 |
-| Forever-only paths | 13 |
+| Forever-only paths | 14 |
 
-The union is 195 relative paths. Generated packages are the exact overlay of
+The union is 196 relative paths. Generated packages are the exact overlay of
 `src/common/` with `src/classic/` or `src/forever/`.
 
 ## First-party source
@@ -63,7 +63,7 @@ Classic has one exclusive packaged path:
 
 - `Textures/BankIcon.tga`
 
-Forever has thirteen exclusive packaged paths:
+Forever has fourteen exclusive packaged paths:
 
 - `Combat/BlizzardDamageMeterBridge.lua`
 - `Combat/ForeverNativeAdapter.lua`
@@ -73,6 +73,7 @@ Forever has thirteen exclusive packaged paths:
 - `Core/ForeverSchema.lua`
 - `Nameplates/ForeverAuras.lua`
 - `Nameplates/ForeverNativeAdapter.lua`
+- `Movers/ForeverAuraAdapter.lua`
 - `Plus/ForeverNativeAdapter.lua`
 - `SpendTalentPoint.lua`
 - `Trainer/ForeverNativeAdapter.lua`
@@ -89,6 +90,12 @@ and most Unit Frame behavior.
 Shared does not mean identical client behavior. Shared modules consume Compat,
 client policy, and provider contracts to obtain the correct implementation
 without embedding broad client branches.
+
+Aura presentation is one such shared policy: `Core/Config.lua` publishes
+`ns.AuraPresentation`, which owns timer/count font, inside-icon anchors, and
+swipe/timer visibility for shared Classic renderers and Forever AuraContainer
+providers. Aura discovery and Blizzard UI ownership remain at their existing
+client/provider boundaries.
 
 ## Verification
 

@@ -229,6 +229,14 @@ end
 -- an explicit font path and styleOverride instead.
 function ns:StyleFont(fontString, fontPath, size, moduleKey, styleOverride)
     if not fontString then return end
+    -- Some modern Blizzard aura collections include secure private-aura
+    -- anchors whose `Duration` member is a Frame rather than a FontString.
+    -- Shared presentation helpers must fail closed on those placeholders.
+    if type(fontString.SetFontObject) ~= "function"
+        and type(fontString.SetFont) ~= "function"
+    then
+        return
+    end
     if not fontPath then
         fontPath = self:GetFontPath(self:ResolveFont(moduleKey))
     end
@@ -245,8 +253,9 @@ function ns:StyleFont(fontString, fontPath, size, moduleKey, styleOverride)
     local flag = (style == "OUTLINE" and "OUTLINE")
               or (style == "THICKOUTLINE" and "THICKOUTLINE")
               or ""
+    if type(fontString.SetFont) ~= "function" then return end
     fontString:SetFont(fontPath, size, flag)
-    if not fontString:GetFont() then
+    if type(fontString.GetFont) == "function" and not fontString:GetFont() then
         fontString:SetFont(self.DEFAULT_FONT_PATH, size, flag)
     end
     if style == "SHADOW" then
@@ -259,6 +268,64 @@ function ns:StyleFont(fontString, fontPath, size, moduleKey, styleOverride)
         if fontString.SetShadowColor then fontString:SetShadowColor(0, 0, 0, 0) end
         if fontString.SetShadowOffset then fontString:SetShadowOffset(0, 0) end
     end
+end
+
+-- One portable visual contract for every TurboFace-rendered aura surface.
+-- Providers still own aura discovery, filtering, icon size, and layout; this
+-- policy owns only the presentation details users expect to stay identical.
+local AuraPresentation = {}
+ns.AuraPresentation = AuraPresentation
+
+function AuraPresentation:GetFontSize(scale)
+    scale = tonumber(scale) or 1
+    if scale <= 0 then scale = 1 end
+    return math.max(8, tonumber(TurboFaceDB and TurboFaceDB.auraTimerSize) or 14) / scale
+end
+
+function AuraPresentation:StyleText(fontString, scale)
+    if not fontString then return end
+    ns:StyleFont(fontString, nil, self:GetFontSize(scale), "auras")
+    if fontString.SetTextColor then fontString:SetTextColor(1, 1, 1, 1) end
+end
+
+function AuraPresentation:AnchorTimer(fontString, relativeTo)
+    if not fontString or not relativeTo then return end
+    fontString:ClearAllPoints()
+    fontString:SetPoint("BOTTOM", relativeTo, "BOTTOM", 0, 1)
+end
+
+function AuraPresentation:AnchorCount(fontString, relativeTo)
+    if not fontString or not relativeTo then return end
+    fontString:ClearAllPoints()
+    fontString:SetPoint("TOPRIGHT", relativeTo, "TOPRIGHT", -2, -2)
+end
+
+function AuraPresentation:ShowSwipe()
+    return not TurboFaceDB or TurboFaceDB.auraShowSwipe ~= false
+end
+
+function AuraPresentation:ShowTimer()
+    return not TurboFaceDB or TurboFaceDB.auraShowTimer ~= false
+end
+
+function AuraPresentation:ConfigureCooldown(cooldown)
+    if not cooldown then return end
+    if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
+    if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+    if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(self:ShowSwipe()) end
+    if cooldown.SetSwipeColor then cooldown:SetSwipeColor(0, 0, 0, 0.7) end
+    if cooldown.SetReverse then cooldown:SetReverse(true) end
+    if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(true) end
+end
+
+function AuraPresentation:GetSignature()
+    return table.concat({
+        tostring(self:GetFontSize()),
+        tostring(ns:ResolveFont("auras")),
+        tostring(ns:ResolveTextStyle("auras")),
+        tostring(self:ShowSwipe()),
+        tostring(self:ShowTimer()),
+    }, ":")
 end
 
 -- Flat feature settings use explicit root keys rather than a nested config

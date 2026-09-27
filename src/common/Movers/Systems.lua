@@ -1040,6 +1040,107 @@ local function ElementLabel(id)
     return (info and info.label) or id
 end
 
+local function AuraMoverProbe()
+    local API = ns.API
+    local function Readable(value)
+        return not (API and API.CanAccessValue) or API.CanAccessValue(value) == true
+    end
+    local function Text(value, fallback)
+        if not Readable(value) then return fallback or "<secret>" end
+        local ok, result = pcall(tostring, value)
+        return ok and result or (fallback or "<unreadable>")
+    end
+    local function SafeCall(callable, ...)
+        if type(callable) ~= "function" then return nil end
+        local function Capture(...)
+            return select("#", ...), { ... }
+        end
+        local count, values = Capture(pcall(callable, ...))
+        if not values[1] then return nil end
+        return unpack(values, 2, count)
+    end
+    local function Safe(object, methodName, ...)
+        if not object then return nil end
+        local method = SafeCall(function() return object[methodName] end)
+        return SafeCall(method, object, ...)
+    end
+    local function Name(object)
+        if not object then return "nil" end
+        local name = Safe(object, "GetDebugName")
+        if not Readable(name) then return "<secret-name>" end
+        if name == nil then name = Safe(object, "GetName") end
+        if not Readable(name) then return "<secret-name>" end
+        return Text(name, "<anonymous>")
+    end
+    local function Point(object)
+        local point, relative, relativePoint, x, y = Safe(object, "GetPoint", 1)
+        if not Readable(point) then return "<secret>" end
+        if point == nil then return "none" end
+        if not Readable(relativePoint) or not Readable(x) or not Readable(y) then return "<secret>" end
+        return ("%s>%s/%s %.1f,%.1f"):format(Text(point), Name(relative),
+            Text(relativePoint or point), tonumber(x) or 0, tonumber(y) or 0)
+    end
+    local function Describe(label, object)
+        if not object then
+            Chat(label .. "=missing")
+            return
+        end
+        Chat(("%s=%s type=%s shown=%s protected=%s forbidden=%s scale=%s point=%s"):format(
+            label, Name(object), Text(Safe(object, "GetObjectType"), "?"),
+            Text(Safe(object, "IsShown")), Text(Safe(object, "IsProtected")),
+            Text(Safe(object, "IsForbidden")), Text(Safe(object, "GetScale")), Point(object)))
+    end
+
+    M:RequestAuraUpdate(true)
+    Chat("aura probe begin; target=" .. Text(SafeCall(UnitExists, "target"))
+        .. " targettarget=" .. Text(SafeCall(UnitExists, "targettarget"))
+        .. " combat=" .. Text(SafeCall(InCombatLockdown)))
+    Describe("TargetBuffAnchor", _G.TurboFaceTargetBuffMoverAnchor)
+    Describe("TargetDebuffAnchor", _G.TurboFaceTargetDebuffMoverAnchor)
+    Describe("ToTDebuffAnchor", _G.TurboFaceToTDebuffMoverAnchor)
+    Describe("TargetFrameBuff1", _G.TargetFrameBuff1)
+    Describe("TargetFrameDebuff1", _G.TargetFrameDebuff1)
+    Describe("TargetFrameToTDebuff1", _G.TargetFrameToTDebuff1)
+    Describe("NativeTargetAuraContainer", Safe(_G.TargetFrame, "GetAuraContainer"))
+
+    local provider = ns.MoverAuraProvider
+    if provider then
+        Chat("provider supported=" .. Text(provider.supported)
+            .. " lastError=" .. Text(provider.lastError, "none"))
+        for _, id in ipairs({ "TargetBuffs", "TargetDebuffs", "ToTDebuffs" }) do
+            local controller = provider.controllers and provider.controllers[id]
+            if controller then
+                Chat(("provider %s active=%s unit=%s buttons=%s shown=%s"):format(
+                    id, Text(controller.active), Text(controller.unit),
+                    Text(controller.buttonCount), Text(Safe(controller.frame, "IsShown"))))
+            else
+                Chat("provider " .. id .. "=missing")
+            end
+        end
+    end
+
+    local seen, candidates, output = {}, {}, 0
+    local function Visit(object, depth)
+        if not object or seen[object] or depth > 6 then return end
+        seen[object] = true
+        local auraMethod = type(SafeCall(function() return object.AddAuraGroup end)) == "function"
+            or type(SafeCall(function() return object.SetAuraGroupFilterString end)) == "function"
+        if auraMethod then
+            candidates[#candidates + 1] = object
+        end
+        local children = { Safe(object, "GetChildren") }
+        for i = 1, #children do Visit(children[i], depth + 1) end
+    end
+    Visit(_G.TargetFrame, 0)
+    Visit(_G.TargetFrameToT, 0)
+    for i = 1, #candidates do
+        if output >= 30 then break end
+        output = output + 1
+        Describe("candidate" .. output, candidates[i])
+    end
+    Chat("aura probe end; candidates=" .. tostring(#candidates))
+end
+
 
 function M:HandleSlash(cmd, args)
     cmd = cmd and cmd:lower() or ""
@@ -1074,6 +1175,8 @@ function M:HandleCommand(msg)
         self:Lock()
     elseif cmd == "unlock" then
         self:Unlock()
+    elseif cmd == "auraprobe" or (cmd == "aura" and args:lower() == "probe") then
+        AuraMoverProbe()
     elseif cmd == "hide" then
         if args ~= "" then
             local name, state = ParseElementAndState(args)
@@ -1163,7 +1266,7 @@ function M:HandleCommand(msg)
             Chat("usage: /tfmove nudge 1")
         end
     else
-        Chat("commands: /tf move, /tf lock, /tf reset playerbuffs, /tfmove hide fps, /tfmove clickthrough playerbuffs, /tfmove grid, /tfmove snap 5, /tfmove nudge 1")
+        Chat("commands: /tf move, /tf lock, /tfmove auraprobe, /tf reset playerbuffs, /tfmove hide fps, /tfmove clickthrough playerbuffs, /tfmove grid, /tfmove snap 5, /tfmove nudge 1")
     end
 end
 

@@ -11,6 +11,221 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_forever_target_aura_movers_use_native_secret_container(self) -> None:
+        shared = (ROOT / "src" / "common" / "Movers" / "Auras.lua").read_text()
+        adapter = (ROOT / "src" / "forever" / "Movers" / "ForeverAuraAdapter.lua").read_text()
+        toc = (ROOT / "src" / "forever" / "TurboFace.toc").read_text()
+
+        self.assertIn("ns.MoverAuraProvider", shared)
+        self.assertNotIn("IS_TARGET_FOREVER_BUILD", shared)
+        self.assertIn('CreateFrame, "AuraContainer"', adapter)
+        self.assertIn('"CustomAuraContainerTemplate"', adapter)
+        self.assertIn('return "targettarget", false, 4', adapter)
+        self.assertIn("function Provider:InvalidateUnit(unit)", adapter)
+        self.assertIn("and UnitPresent(unit)", adapter)
+        self.assertIn("function SuppressNativeTargetAuras()", adapter)
+        self.assertIn("SetMouseMotionEnabled", adapter)
+        self.assertIn("SetMouseClickEnabled", adapter)
+        self.assertLess(toc.index("Movers\\Auras.lua"), toc.index("Movers\\ForeverAuraAdapter.lua"))
+        self.assertLess(toc.index("Movers\\ForeverAuraAdapter.lua"), toc.index("Movers\\Systems.lua"))
+
+    def test_trainer_spellbook_rank_fallback_and_recipe_scrub(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the trainer learned-state contract")
+        harness = r'''
+function wipe(t) for key in pairs(t) do t[key] = nil end end
+BOOKTYPE_SPELL = "spell"
+
+local spellbook = { { "Rend", "Rank 2" }, { "Battle Shout", "" } }
+local ns = {
+    Trainer = {},
+    API = {
+        GetSpellInfo = function(id)
+            if id == 772 or id == 6546 or id == 6547 then return "Rend" end
+            if id == 6673 then return "Battle Shout" end
+        end,
+        GetNumSpellTabs = function() return 1 end,
+        GetSpellTabInfo = function() return "Warrior", nil, 0, #spellbook end,
+        GetSpellBookItemName = function(index) return unpack(spellbook[index]) end,
+        IsKnownSpellID = function() return false end,
+    },
+}
+function ns:EnsureProfessionRecipeDatabase()
+    return {
+        GetProfessions = function() return { 185 } end,
+        GetRecipes = function(_, professionID)
+            assert(professionID == 185)
+            return { [4094] = { name = "Barbecued Buzzard Wing" } }
+        end,
+    }
+end
+
+TurboFaceTrainerDB = {
+    data = {
+        WARRIOR = {
+            [0] = { [4094] = { cost = 500 } },
+            [4] = { [772] = { cost = 100, rank = 1, status = "available" } },
+        },
+    },
+}
+
+assert(loadfile("src/common/Trainer/SkillData.lua"))("TurboFace", ns)
+local trainer = ns.Trainer
+assert(trainer:IsClassSpellKnown(772, "Rend", 1, true))
+assert(trainer:IsClassSpellKnown(6546, "Rend", 2, true))
+assert(not trainer:IsClassSpellKnown(6547, "Rend", 3, true))
+assert(trainer:IsClassSpellKnown(6673, "Battle Shout", 1, false))
+
+trainer:ScrubProfessionRecipesFromClassData()
+trainer:ScrubClassTrainerTransientStatus()
+assert(TurboFaceTrainerDB.data.WARRIOR[0][4094] == nil)
+assert(TurboFaceTrainerDB.data.WARRIOR[4][772] ~= nil)
+assert(TurboFaceTrainerDB.data.WARRIOR[4][772].status == nil)
+assert(TurboFaceTrainerDB.professionCaptureIsolationV1 == true)
+
+spellbook = { { "Rend", "Rank 3" } }
+trainer:InvalidateKnownSpellbookRanks()
+assert(trainer:IsClassSpellKnown(6547, "Rend", 3, true))
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_quest_automation_defers_and_serializes_npc_actions(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the quest automation contract")
+        harness = r'''
+local settings = {
+    automateGossip = true,
+    autoQuestAccept = true,
+    autoQuestTurnIn = true,
+    automateSpiritHealer = false,
+}
+local ns = {
+    PlusSettings = function() return settings end,
+    API = {},
+    Chat = function() end,
+}
+
+local frames = {}
+function CreateFrame()
+    local frame = { events = {} }
+    function frame:SetScript(kind, callback) self[kind] = callback end
+    function frame:UnregisterAllEvents() self.events = {} end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    frames[#frames + 1] = frame
+    return frame
+end
+function ns.API.RegisterEvent(frame, event) frame:RegisterEvent(event) return true end
+function ns.API.QuestReadyForTurnIn() return false end
+
+local timers = {}
+C_Timer = {
+    After = function(delay, callback)
+        timers[#timers + 1] = { delay = delay, callback = callback }
+    end,
+}
+local function RunDelay(delay)
+    for index, timer in ipairs(timers) do
+        if timer.delay == delay then
+            table.remove(timers, index)
+            timer.callback()
+            return true
+        end
+    end
+    return false
+end
+local function CountDelay(delay)
+    local count = 0
+    for _, timer in ipairs(timers) do
+        if timer.delay == delay then count = count + 1 end
+    end
+    return count
+end
+
+function IsShiftKeyDown() return false end
+function UnitIsGhost() return false end
+function UnitGUID(unit) if unit == "npc" then return "Creature-test" end end
+
+local questDataVisible = true
+local questSelected, gossipSelected = 0, 0
+C_GossipInfo = {
+    GetNumAvailableQuests = function() return questDataVisible and 1 or 0 end,
+    GetNumActiveQuests = function() return 0 end,
+    GetAvailableQuests = function()
+        return questDataVisible and {{ questID = 42, title = "Test Quest" }} or {}
+    end,
+    GetActiveQuests = function() return {} end,
+    GetOptions = function() return {{ gossipOptionID = 7, orderIndex = 1 }} end,
+    SelectAvailableQuest = function(id)
+        assert(id == 42)
+        questSelected = questSelected + 1
+        questDataVisible = false
+    end,
+    SelectOption = function() gossipSelected = gossipSelected + 1 end,
+}
+
+local accepted, completed, rewarded = 0, 0, 0
+function AcceptQuest() accepted = accepted + 1 end
+function IsQuestCompletable() return true end
+function CompleteQuest() completed = completed + 1 end
+function GetNumQuestChoices() return 0 end
+function GetQuestReward(index) assert(index == 0) rewarded = rewarded + 1 end
+
+assert(loadfile("src/common/Plus/Automation.lua"))("TurboFace", ns)
+ns.PlusAutomation:Init()
+
+local gossipFrame, questFrame
+for _, frame in ipairs(frames) do
+    if frame.events.GOSSIP_SHOW and frame.events.GOSSIP_CLOSED and frame.events.QUEST_DETAIL then
+        questFrame = frame
+    elseif frame.events.GOSSIP_SHOW and frame.events.GOSSIP_CLOSED then
+        gossipFrame = frame
+    end
+end
+assert(gossipFrame and questFrame, "automation event frames were not registered")
+
+-- Neither listener may act from inside GOSSIP_SHOW.
+gossipFrame.OnEvent(gossipFrame, "GOSSIP_SHOW")
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(questSelected == 0 and gossipSelected == 0)
+
+-- The quest pump wins before delayed single-option gossip. Closing/advancing
+-- gossip invalidates the latter even if the quest arrays have gone stale.
+assert(RunDelay(0.10))
+assert(questSelected == 1 and gossipSelected == 0)
+gossipFrame.OnEvent(gossipFrame, "GOSSIP_CLOSED")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED", true)
+assert(RunDelay(0.20))
+assert(gossipSelected == 0, "single-option gossip raced the quest selector")
+
+-- QUEST_DETAIL observes selector success, but acceptance itself waits until
+-- the event callback has returned. No speculative gossip pump is started.
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+assert(accepted == 0)
+assert(RunDelay(0))
+assert(accepted == 1)
+assert(CountDelay(0.10) == 0, "quest detail started a pre-confirmation rescan")
+
+questFrame.OnEvent(questFrame, "QUEST_ACCEPTED", 42)
+assert(CountDelay(0.10) == 1, "accepted quest did not schedule the next scan")
+
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+assert(completed == 0)
+assert(RunDelay(0))
+assert(completed == 1)
+
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(rewarded == 0)
+assert(RunDelay(0))
+assert(rewarded == 1)
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_forever_development_restrictions_and_bypass(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the client-policy contract")
@@ -28,6 +243,7 @@ assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCNameTi
 assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyPlayerDamagedOnly"))
 assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCDamagedOnly"))
 assert(client:IsGateDevelopmentRestricted("unitframes"))
+assert(client:IsGateDevelopmentRestricted("castBars"))
 assert(client:IsGateDevelopmentRestricted("class"))
 assert(not client:IsDevBypassActive())
 
@@ -35,11 +251,73 @@ assert(client:SetDevBypass(true))
 assert(TurboFaceCompatDB.devFeatureBypass == true)
 assert(not client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
 assert(not client:IsGateDevelopmentRestricted("unitframes"))
+assert(not client:IsGateDevelopmentRestricted("castBars"))
 assert(not client:IsGateDevelopmentRestricted("class"))
 
 assert(not client:SetDevBypass(false))
 assert(TurboFaceCompatDB.devFeatureBypass == nil)
 assert(client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
+assert(client:IsGateDevelopmentRestricted("castBars"))
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_forever_target_swing_combat_estimator(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the target estimator contract")
+        harness = r'''
+local active
+local ns = {
+    Compat = { IS_TARGET_FOREVER_BUILD = true },
+    API = {
+        IsSecretValue = function(value) return value == "SECRET" end,
+        CanAccessValue = function(value) return value ~= "SECRET" end,
+    },
+    Providers = {
+        Register = function(_, family, _, provider)
+            if family == "swingTimers" then active = provider end
+        end,
+    },
+}
+
+local targetExists, targetTargetExists = true, true
+local canAttack, targetsPlayer = true, true
+local guid = "Creature-0-0-0-0-1"
+function UnitExists(unit)
+    if unit == "target" then return targetExists end
+    if unit == "targettarget" then return targetTargetExists end
+    return false
+end
+function UnitCanAttack() return canAttack end
+function UnitIsUnit() return targetsPlayer end
+function UnitGUID() return guid end
+
+assert(loadfile("src/forever/Combat/ForeverSwingTimerAdapter.lua"))("TurboFace", ns)
+assert(active and active:UsesTargetCombatEstimator())
+
+local duration, observedGuid = active:ObserveTargetCombat("player", "WOUND", 10)
+assert(duration == 2 and observedGuid == guid)
+duration = active:ObserveTargetCombat("player", "PARRY", 12.4)
+assert(math.abs(duration - 2.4) < 0.0001)
+
+-- Implausibly close results resync the bar without poisoning the learned cadence.
+duration = active:ObserveTargetCombat("player", "MISS", 12.5)
+assert(math.abs(duration - 2.4) < 0.0001)
+assert(active:ObserveTargetCombat("player", "HEAL", 14) == nil)
+
+targetsPlayer = false
+assert(active:ObserveTargetCombat("player", "WOUND", 15) == nil)
+targetsPlayer = "SECRET"
+canAttack = "SECRET"
+duration = active:ObserveTargetCombat("player", "WOUND", 16)
+assert(math.abs(duration - 3.5) < 0.0001)
+
+guid = "Creature-0-0-0-0-2"
+canAttack, targetsPlayer = true, true
+duration = active:ObserveTargetCombat("player", "WOUND", 20)
+assert(duration == 2)
 '''
         result = subprocess.run(
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
@@ -271,6 +549,61 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
             ]
             wanted = set(rng.sample(names, rng.randint(1, 4)))
             self.assertEqual(direct_scan(buffs, wanted), indexed_scan(buffs, wanted), f"case {case}")
+
+    def test_all_aura_renderers_use_shared_presentation_policy(self) -> None:
+        config = (ROOT / "src" / "common" / "Core" / "Config.lua").read_text()
+        for marker in (
+            "ns.AuraPresentation = AuraPresentation",
+            'SetPoint("BOTTOM", relativeTo, "BOTTOM", 0, 1)',
+            'SetPoint("TOPRIGHT", relativeTo, "TOPRIGHT", -2, -2)',
+            'TurboFaceDB.auraTimerSize',
+        ):
+            self.assertIn(marker, config)
+
+        for relative in (
+            "src/common/AuraStyle.lua",
+            "src/common/PartyPetAuras.lua",
+            "src/common/Nameplates/Auras.lua",
+            "src/forever/Nameplates/ForeverAuras.lua",
+            "src/forever/Movers/ForeverAuraAdapter.lua",
+        ):
+            source = (ROOT / relative).read_text()
+            self.assertIn("ns.AuraPresentation", source, relative)
+
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+        self.assertIn('"Timer & Stack Font Size", "auraTimerSize"', options)
+        self.assertNotIn('"Debuff Text Size",  "auras.debuffFontSize"', options)
+        self.assertNotIn('"Buff Text Size",    "auras.buffFontSize"', options)
+
+    def test_forever_player_aura_style_survives_secret_combat_transition(self) -> None:
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        aura_style = (ROOT / "src" / "common" / "AuraStyle.lua").read_text()
+        compatibility = (ROOT / "src" / "forever" / "Core" / "Compatibility.lua").read_text()
+
+        self.assertIn("nativePlayerAuraPresentation = isForever", client)
+        self.assertIn("local function StyleNativePlayerPresentation", aura_style)
+        self.assertIn("if UseNativePlayerAuraPresentation() then return end", aura_style)
+        self.assertIn("StyleNativePlayerPresentation(btn, GetCooldown(btn), false)", aura_style)
+        self.assertIn("local function GetTextFrame(button, cd)", aura_style)
+        self.assertIn("duration:SetParent(textFrame)", aura_style)
+        self.assertIn("StyleNativePlayerPresentation(btn, GetCooldown(btn), nil)", aura_style)
+        self.assertIn("ns.AuraPresentation:AnchorTimer(duration, IconRegion(button))", aura_style)
+        self.assertIn('hooksecurefunc(mixin, "OnUpdate"', aura_style)
+        self.assertIn('hooksecurefunc(duration, "SetPoint"', aura_style)
+        self.assertIn("InstallNativeDurationAnchorGuard(button, duration)", aura_style)
+        self.assertIn("button._tfNativeDuration", aura_style)
+        self.assertIn("and not btn.isAuraAnchor", aura_style)
+        self.assertIn("ns.AuraStyle:Refresh()", compatibility)
+        self.assertNotIn("ns.AuraStyle:ApplySettings()", compatibility)
+
+        config = (ROOT / "src" / "common" / "Core" / "Config.lua").read_text()
+        self.assertIn('type(fontString.SetFont) ~= "function"', config)
+
+    def test_forever_centered_nameplate_auras_use_whole_plate_anchor(self) -> None:
+        source = (ROOT / "src" / "forever" / "Nameplates" / "ForeverAuras.lua").read_text()
+        self.assertIn("local centerAnchor = st and (st.overlay or st.root) or hp", source)
+        self.assertIn('SetPoint("BOTTOM", centerAnchor, "CENTER", x, y)', source)
+        self.assertIn('SetPoint(point, hp, relativePoint, x, y)', source)
 
 
 if __name__ == "__main__":

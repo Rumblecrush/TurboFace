@@ -195,7 +195,9 @@ local function ClearPartyAuraTimer(button)
 end
 
 local function TrackPartyAuraTimer(button, expirationTime, ownerFrame)
-    if not button or not button._tfTimer or not expirationTime or expirationTime <= 0 then
+    if not button or not button._tfTimer or not expirationTime or expirationTime <= 0
+        or (ns.AuraPresentation and not ns.AuraPresentation:ShowTimer())
+    then
         ClearPartyAuraTimer(button)
         StopPartyBuffPulse(button)
         return
@@ -492,12 +494,7 @@ local function EnsurePartyBuffIcon(container, index)
         cooldown:SetAllPoints(button)
         cooldown:EnableMouse(false)
         cooldown:SetFrameLevel((button:GetFrameLevel() or 1) + 1)
-        if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
-        if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
-        if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(true) end
-        if cooldown.SetSwipeColor then cooldown:SetSwipeColor(0, 0, 0, 0.68) end
-        if cooldown.SetReverse then cooldown:SetReverse(true) end
-        if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(true) end
+        ns.AuraPresentation:ConfigureCooldown(cooldown)
     end
     button._tfCooldown = cooldown
 
@@ -506,7 +503,11 @@ local function EnsurePartyBuffIcon(container, index)
     textLayer:EnableMouse(false)
     textLayer:SetFrameLevel((button:GetFrameLevel() or 1) + 2)
     local count = textLayer:CreateFontString(nil, "OVERLAY")
-    count:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorCount(count, button)
+    else
+        count:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    end
     count:SetJustifyH("RIGHT")
     count:SetTextColor(1, 1, 1, 1)
     button._tfCount = count
@@ -514,7 +515,11 @@ local function EnsurePartyBuffIcon(container, index)
     local timer = textLayer:CreateFontString(nil, "OVERLAY")
     -- Match AuraStyle's player-unit-frame countdown: white text tucked just
     -- inside the bottom edge and rendered above the cooldown swipe.
-    timer:SetPoint("BOTTOM", button, "BOTTOM", 0, 1)
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorTimer(timer, button)
+    else
+        timer:SetPoint("BOTTOM", button, "BOTTOM", 0, 1)
+    end
     timer:SetJustifyH("CENTER")
     timer:SetTextColor(1, 1, 1, 1)
     timer:Hide()
@@ -571,7 +576,12 @@ local function SetPartyBuffCooldown(button, duration, expirationTime)
             cooldown:SetCooldown(expirationTime - duration, duration)
         end
     end
-    cooldown:Show()
+    ns.AuraPresentation:ConfigureCooldown(cooldown)
+    if not ns.AuraPresentation or ns.AuraPresentation:ShowSwipe() then
+        cooldown:Show()
+    else
+        cooldown:Hide()
+    end
     return true
 end
 
@@ -655,10 +665,8 @@ local function LayoutPartyBuffs(frame)
                 -column * (iconSize + PARTY_BUFF_SPACING),
                 -row * (iconSize + PARTY_BUFF_SPACING)
             )
-            ns:StyleFont(button._tfCount, nil, math.max(8, math.floor(iconSize * 0.55)), "auras")
-            -- Reuse the same configured size/style as Player/Target AuraStyle.
-            ns:StyleFont(button._tfTimer, nil,
-                math.max(8, tonumber(TurboFaceDB and TurboFaceDB.auraTimerSize) or 14), "auras")
+            ns.AuraPresentation:StyleText(button._tfCount)
+            ns.AuraPresentation:StyleText(button._tfTimer)
         elseif button then
             ResetPartyBuffIcon(button)
         end
@@ -713,9 +721,8 @@ local function LayoutPartyDebuffs(frame)
             column * (iconSize + PARTY_BUFF_SPACING),
             -row * (iconSize + PARTY_BUFF_SPACING)
         )
-        ns:StyleFont(button._tfCount, nil, math.max(8, math.floor(iconSize * 0.55)), "auras")
-        ns:StyleFont(button._tfTimer, nil,
-            math.max(8, tonumber(TurboFaceDB and TurboFaceDB.auraTimerSize) or 14), "auras")
+        ns.AuraPresentation:StyleText(button._tfCount)
+        ns.AuraPresentation:StyleText(button._tfTimer)
     end
 
     container._tfIconSize = iconSize
@@ -986,9 +993,8 @@ local function LayoutPetBuffs(frame)
             button:SetPoint("TOPRIGHT", container, "TOPRIGHT",
                 -column * (iconSize + PARTY_BUFF_SPACING),
                 -row * (iconSize + PARTY_BUFF_SPACING))
-            ns:StyleFont(button._tfCount, nil, math.max(8, math.floor(iconSize * 0.55)), "auras")
-            ns:StyleFont(button._tfTimer, nil,
-                math.max(8, tonumber(TurboFaceDB and TurboFaceDB.auraTimerSize) or 14), "auras")
+            ns.AuraPresentation:StyleText(button._tfCount)
+            ns.AuraPresentation:StyleText(button._tfTimer)
         elseif button then
             ResetPartyBuffIcon(button)
         end
@@ -1029,9 +1035,8 @@ local function LayoutPetDebuffs(frame)
         button:SetPoint("TOPLEFT", container, "TOPLEFT",
             column * (iconSize + PARTY_BUFF_SPACING),
             -row * (iconSize + PARTY_BUFF_SPACING))
-        ns:StyleFont(button._tfCount, nil, math.max(8, math.floor(iconSize * 0.55)), "auras")
-        ns:StyleFont(button._tfTimer, nil,
-            math.max(8, tonumber(TurboFaceDB and TurboFaceDB.auraTimerSize) or 14), "auras")
+        ns.AuraPresentation:StyleText(button._tfCount)
+        ns.AuraPresentation:StyleText(button._tfTimer)
     end
 
     container._tfIconSize = iconSize

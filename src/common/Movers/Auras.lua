@@ -184,6 +184,16 @@ local function UpdateAuraGroup(self, id, names, perRow, spacingX, spacingY, grow
 end
 
 function M:UpdateAuraLayout()
+    -- Forever cannot expose target aura data through the legacy
+    -- TargetFrameBuff*/TargetFrameDebuff* buttons.  Its client adapter owns
+    -- Blizzard AuraContainers instead, while these shared mover anchors and
+    -- their SavedVariables remain the portable positioning contract.
+    local provider = ns.MoverAuraProvider
+    if provider and provider.Update then
+        provider:Update(self)
+        return
+    end
+
     local db = DB()
     if db.enabled == false or db.auraLayout == false then return end
     local a = AuraDB()

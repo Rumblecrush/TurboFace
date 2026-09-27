@@ -1,12 +1,12 @@
 # TurboFace Forever Architecture
 
-**Last updated:** 2026-09-23  
-**Current addon version:** 0.18.2
+**Last updated:** 2026-09-27
+**Current addon version:** 0.18.3
 **Target client:** World of Warcraft Forever beta 1.60.1, Interface 16001, project 1  
 **Observed beta build:** 69977  
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.18.2
+**Source baseline:** TurboFace unified 0.18.3
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -582,8 +582,48 @@ returns false and `Nameplates/ForeverAuras.lua` is the client-owned renderer.
 - TurboFace translates user presentation/filter choices into native groups/candidate filters.
 - TurboFace does not run the Classic aura index scanner when the aura domain is secret.
 - Generated aura buttons may become forbidden after Blizzard binds secret state. TurboFace styles them only during the safe initialization callback and does not mutate bound buttons during ordinary refresh.
+- Center-growth rows use the detached overlay/nameplate-root center as their horizontal reference;
+  left/right growth remains anchored to the native health-bar edges. This uses write-only anchors
+  and performs no protected geometry measurement.
 
 Duration formatting is supplied through Blizzard's binding path; TurboFace does not read a secret remaining time to produce countdown text.
+
+The portable `ns.AuraPresentation` policy supplies the same visual contract to this provider, the
+Forever target-mover provider, and the shared readable renderers: bottom-inside countdowns,
+top-right inside stack counts, one Auras font/style/size, and shared swipe/timer visibility. Forever
+providers apply it only in the AuraContainer initialization callback before secret binding; a live
+presentation-setting change retires the old container and creates a newly styled one.
+
+Player auras use a narrower native-ownership path. While aura data is readable, shared AuraStyle
+applies `ns.AuraPresentation` to Blizzard's existing player duration, application-count, and
+cooldown regions. When combat activates the secret aura domain, TurboFace performs no scan, timer
+arithmetic, or region mutation; it preserves those already-styled Blizzard-bound regions so the
+client can continue updating their secret state. `Client.corePolicy.nativePlayerAuraPresentation`
+owns this client difference. Do not restore the former restricted-state `SuspendButtonOverlay`
+path for Forever player buttons, because that explicitly removes the presentation at combat entry.
+The preparation walk covers the full preallocated `BuffFrame.auraFrames` and
+`DebuffFrame.auraFrames` pools, not only shown buttons; a hidden debuff slot may receive its first
+aura only after combat has already activated restrictions.
+Blizzard's native `AuraButtonMixin:OnUpdate` resets the duration anchor after updating its secret
+text. A secure post-hook reasserts only the shared bottom-inside anchor on previously identified
+player-aura buttons. It does not receive, inspect, format, or replace the duration value, and leaves
+Blizzard's native color changes intact.
+DebuffFrame also runs a full grid-layout pass after button updates. Each preallocated native duration
+region therefore carries a guarded `SetPoint` post-hook that converges any Blizzard layout reset on
+the same shared anchor without branching on aura data.
+
+The target-aura movers use the same client boundary. Shared `Movers/Auras.lua` owns the portable
+`TargetBuffs`, `TargetDebuffs`, and `ToTDebuffs` anchors and SavedVariables. Forever's
+`Movers/ForeverAuraAdapter.lua` fills those anchors with detached Blizzard AuraContainers because
+the modern target frame exposes neither the legacy named aura buttons nor a reusable child
+AuraContainer. The adapter binds `target`/`targettarget` unit tokens without reading aura values;
+generated buttons are styled only in the template initialization callback and are left immutable
+after secret state is bound. Target identity events explicitly run the supported disable/hide and
+rebind lifecycle, ensuring a missing or replaced unit cannot leave the previous secret-backed
+buttons visible. While TurboFace owns both detached target rows, the combined native target
+AuraContainer is reduced to zero buff/debuff slots and hidden through its container interface;
+disabling the TurboFace rows restores its captured native limits. Hover details remain owned by
+the intrinsic AuraButton tooltip channel, with click/cancel input explicitly disabled.
 
 ---
 
@@ -791,6 +831,13 @@ Numeric mismatch must not fall through to same-name matching because Forever may
 Name/rank fallback exists only when numeric identity is genuinely unavailable and must fail closed on ambiguity.
 
 `Trainer:GetTrainerServiceInfoCompat()` is the normalization boundary for legacy/Forever trainer return shapes.
+
+Profession ownership is derived from the trainer services' profession skill lines, not solely from
+the surviving `IsTradeskillTrainer()` boolean. This prevents Forever profession recipes from being
+captured into the account-wide class catalog when the legacy boolean is stale. A one-time
+LibProfessionDB identity scrub removes recipe IDs written by older builds. Class learned state uses
+exact spell identity first and a cached live spellbook name/rank snapshot second, covering clients
+that replace older ranks and no longer report those IDs as known.
 
 ### 15.3 Load-on-demand spell data
 
@@ -1026,6 +1073,12 @@ The shared quest controller keeps serialized selection confirmation/retry behavi
 valid on Era as well: unsupported companion events fail closed, while ordinary Classic quest events
 continue through their legacy APIs.
 
+Forever's interaction UI may finish its gossip/quest transition after the event listener returns.
+The shared controller therefore defers gossip selection until the payload is stable and executes
+quest selection, acceptance, completion, and reward actions only on later frames. It waits for the
+corresponding success event before scanning the NPC again, preventing event-order races from leaving
+an invisible interaction latched until the player moves out of range.
+
 System Tweaks also uses one shared implementation. Fast loot guards the loot APIs, resolves either
 modern or legacy loot-method identity, preserves master-loot thresholds, skips locked slots, and
 exposes diagnostics. Vendor-price tooltip injection is **not** assumed portable: the `plusUI`
@@ -1052,9 +1105,16 @@ Forever-specific rules:
 
 Known-incomplete controls remain visible but disabled with the tooltip **This feature is currently
 disabled on Forever**. This currently covers Global DoT/Heal Prediction; the three deferred
-Nameplate identity/damaged-only controls; and the Unit Frames and Class Features masters. The
+Nameplate identity/damaged-only controls; and the Unit Frames, Cast Bars, and Class Features masters. The
 restriction is a `Core/Client.lua` policy consumed by both Options and effective runtime gates, so a
 portable profile cannot activate the blocked path merely because its stored checkbox is true.
+
+The Forever target swing-timer row remains part of the shared Swing Timers presentation and Movers.
+Because hostile `UnitAttackSpeed` is opaque, `ForeverSwingTimerAdapter.lua` estimates the selected
+target's cadence from melee-like `UNIT_COMBAT` results received by the player while that target is
+targeting the player. Plausible intervals update the learned duration; every qualifying result
+resynchronizes the visible timer. This is intentionally a Forever provider policy rather than a
+client branch in the shared timer engine.
 
 `/tf dev bypass` toggles the Forever-only developer override. The override is stored in
 `TurboFaceCompatDB`, outside portable profiles, so it survives the `/reload` required by protected

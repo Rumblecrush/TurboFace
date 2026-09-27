@@ -13,6 +13,28 @@ if not (compat and compat.IS_TARGET_FOREVER_BUILD == true) then return end
 
 local Forever = {}
 
+local TARGET_ESTIMATE_DEFAULT = 2
+local TARGET_ESTIMATE_MIN = 0.50
+local TARGET_ESTIMATE_MAX = 5.00
+local targetEstimate = { guid = nil, lastAt = nil, interval = nil }
+
+local TARGET_COMBAT_RESULTS = {
+    WOUND = true,
+    DODGE = true,
+    PARRY = true,
+    MISS = true,
+}
+
+local function IsSecret(value)
+    return ns.API.IsSecretValue and ns.API.IsSecretValue(value) or false
+end
+
+local function IsAccessible(value)
+    if IsSecret(value) then return false end
+    if ns.API.CanAccessValue then return ns.API.CanAccessValue(value) == true end
+    return true
+end
+
 function Forever:IsSupported()
     return true
 end
@@ -35,6 +57,55 @@ end
 
 function Forever:UsesCharacterDamageCapture()
     return true
+end
+
+function Forever:UsesTargetCombatEstimator()
+    return true
+end
+
+function Forever:ResetTargetCombat(guid)
+    targetEstimate.guid = guid
+    targetEstimate.lastAt = nil
+    targetEstimate.interval = nil
+end
+
+-- Forever does not expose a readable hostile UnitAttackSpeed. UNIT_COMBAT does,
+-- however, report melee-like results received by the player. While the selected
+-- hostile is targeting the player, those results provide a practical cadence
+-- clock without inspecting protected combat-log payloads. Secret booleans are
+-- deliberately treated as unknown rather than false so restricted encounters
+-- can continue to use the sanctioned event stream.
+function Forever:ObserveTargetCombat(unit, action, now)
+    if unit ~= "player" or not TARGET_COMBAT_RESULTS[action] then return nil end
+    local targetExists = UnitExists("target")
+    if IsAccessible(targetExists) and targetExists ~= true then return nil end
+
+    local canAttack = UnitCanAttack("player", "target")
+    if IsAccessible(canAttack) and canAttack ~= true then return nil end
+    local targetTargetExists = UnitExists("targettarget")
+    if IsAccessible(targetTargetExists) and targetTargetExists ~= true then return nil end
+
+    local targetsPlayer = UnitIsUnit("targettarget", "player")
+    if IsAccessible(targetsPlayer) and targetsPlayer ~= true then return nil end
+
+    local guid = UnitGUID("target")
+    if not IsAccessible(guid) or type(guid) ~= "string" or guid == "" then return nil end
+    if targetEstimate.guid ~= guid then
+        self:ResetTargetCombat(guid)
+    end
+
+    now = type(now) == "number" and now or (GetTime and GetTime() or 0)
+    local previous = targetEstimate.lastAt
+    targetEstimate.lastAt = now
+
+    if type(previous) == "number" then
+        local sample = now - previous
+        if sample >= TARGET_ESTIMATE_MIN and sample <= TARGET_ESTIMATE_MAX then
+            targetEstimate.interval = sample
+        end
+    end
+
+    return targetEstimate.interval or TARGET_ESTIMATE_DEFAULT, guid
 end
 
 function Forever:Attach(ST)

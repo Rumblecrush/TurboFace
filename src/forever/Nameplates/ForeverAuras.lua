@@ -90,7 +90,9 @@ local function MergeSet(first, second)
 end
 
 local function SetFont(fontString, size)
-    if ns.StyleFont then
+    if ns.AuraPresentation then
+        ns.AuraPresentation:StyleText(fontString)
+    elseif ns.StyleFont then
         ns:StyleFont(fontString, nil, size, "auras")
     else
         fontString:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, "OUTLINE")
@@ -158,24 +160,30 @@ local function InitializeAuraButton(controller, button)
     cooldown:SetPoint("CENTER")
     cooldown:EnableMouse(false)
     if cooldown.EnableMouseMotion then cooldown:EnableMouseMotion(false) end
-    if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
-    if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
-    if cooldown.SetSwipeColor then cooldown:SetSwipeColor(0, 0, 0, 0.68) end
-    if cooldown.SetReverse then cooldown:SetReverse(true) end
-    if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(true) end
+    if ns.AuraPresentation then ns.AuraPresentation:ConfigureCooldown(cooldown) end
     button.Cooldown = cooldown
     Safe("button-duration", button, "SetDurationCooldown", cooldown)
 
     local count = button:CreateFontString(nil, "OVERLAY")
-    count:SetPoint("TOPRIGHT", button, "TOPRIGHT", 3, 3)
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorCount(count, button)
+    else
+        count:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    end
     button.Count = count
     Safe("button-count", button, "SetApplicationCount", count)
 
     local timer = cooldown:CreateFontString(nil, "OVERLAY")
-    timer:SetPoint("CENTER")
+    if ns.AuraPresentation then
+        ns.AuraPresentation:AnchorTimer(timer, button)
+    else
+        timer:SetPoint("BOTTOM", button, "BOTTOM", 0, 1)
+    end
     button.TimerText = timer
     local formatter = DurationFormatter()
-    if formatter and type(button.SetDurationText) == "function" then
+    if (not ns.AuraPresentation or ns.AuraPresentation:ShowTimer())
+        and formatter and type(button.SetDurationText) == "function"
+    then
         Safe("button-timer", button, "SetDurationText", timer, {textFormatter = formatter})
     else
         timer:Hide()
@@ -216,7 +224,10 @@ local function InitializeAuraButton(controller, button)
 end
 
 local function CreateController(st, kind)
-    local controller = {kind = kind, buttons = {}, groups = {}}
+    local controller = {
+        kind = kind, buttons = {}, groups = {},
+        styleSignature = ns.AuraPresentation and ns.AuraPresentation:GetSignature() or "default",
+    }
     local ok, container = pcall(CreateFrame, "AuraContainer", nil, UIParent,
         "CustomAuraContainerTemplate")
     if not ok or not container then
@@ -236,7 +247,16 @@ local function CreateController(st, kind)
 end
 
 local function EnsureController(st, kind)
-    return st[kind .. "Auras"] or CreateController(st, kind)
+    local key = kind .. "Auras"
+    local controller = st[key]
+    local signature = ns.AuraPresentation and ns.AuraPresentation:GetSignature() or "default"
+    if controller and controller.styleSignature ~= signature then
+        Safe(kind .. " restyle-disable", controller.frame, "SetEnabled", false)
+        controller.frame:Hide()
+        st[key] = nil
+        controller = nil
+    end
+    return controller or CreateController(st, kind)
 end
 
 local function Direction(grow)
@@ -304,7 +324,7 @@ local function DesiredGroups(controller)
     return {{filter = "HELPFUL", candidates = dispellable}}
 end
 
-local function ConfigureController(controller, hp)
+local function ConfigureController(controller, st, hp)
     local kind = controller.kind
     local isDebuff = kind == "debuff"
     local enabled = isDebuff and ns.c_showDebuffs ~= false or not isDebuff and ns.c_showBuffs ~= false
@@ -323,8 +343,8 @@ local function ConfigureController(controller, hp)
 
     controller.width = tonumber(isDebuff and ns.c_debuffIconWidth or ns.c_buffIconWidth) or 20
     controller.height = tonumber(isDebuff and ns.c_debuffIconHeight or ns.c_buffIconHeight) or controller.width
-    controller.fontSize = tonumber(isDebuff and ns.c_debuffFontSize or ns.c_buffFontSize) or 10
-    controller.stackSize = tonumber(isDebuff and ns.c_debuffStackFontSize or ns.c_buffStackFontSize) or 10
+    controller.fontSize = ns.AuraPresentation and ns.AuraPresentation:GetFontSize() or 10
+    controller.stackSize = controller.fontSize
     controller.maxCount = math.max(1, math.floor(tonumber(isDebuff and ns.c_maxDebuffs or ns.c_maxBuffs) or 4))
     controller.spacing = tonumber(isDebuff and ns.c_iconSpacing or ns.c_buffIconSpacing) or 2
     local layout = {
@@ -385,7 +405,14 @@ local function ConfigureController(controller, hp)
         y = y + (tonumber(ns.c_debuffIconHeight) or 20) + 4
     end
     if grow == "CENTER" then
-        controller.frame:SetPoint("BOTTOM", hp, "TOP", x, y)
+        -- The native HP fill can be narrower or horizontally offset within the
+        -- full nameplate chassis. Forever's detached overlay is centered on the
+        -- pooled nameplate root without measuring protected geometry, so use it
+        -- as the horizontal reference for centered aura rows. Its center sits
+        -- on the established health-top baseline; LEFT/RIGHT modes below remain
+        -- intentionally tied to the HP edges.
+        local centerAnchor = st and (st.overlay or st.root) or hp
+        controller.frame:SetPoint("BOTTOM", centerAnchor, "CENTER", x, y)
         Safe(kind .. " center-anchor", controller.frame, "SetFlowLayoutAnchorPoint", "BOTTOMLEFT")
     else
         controller.frame:SetPoint(point, hp, relativePoint, x, y)
@@ -414,7 +441,7 @@ function FA:Bind(st, hp)
     local active = false
     for _, kind in ipairs({"debuff", "buff"}) do
         local controller = EnsureController(st, kind)
-        if controller and ConfigureController(controller, hp) then
+        if controller and ConfigureController(controller, st, hp) then
             if controller.unit ~= st.unit or not controller.active then
                 Safe(kind .. " enable", controller.frame, "SetEnabled", true)
                 Safe(kind .. " unit", controller.frame, "SetUnit", st.unit)

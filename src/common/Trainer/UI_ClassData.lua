@@ -98,8 +98,8 @@ Trainer:AddBuilder(function()
                     local hasRealRank = (type(rank) == "number") or (type(rank) == "string" and rank:match("%d+") ~= nil)
                     local rankNum = (type(rank) == "number" and rank) or (type(rank) == "string" and tonumber(rank:match("%d+"))) or 1
                     local isLearnedPetSpell = spellID and Trainer:IsPetSpellKnown(spellID)
-                    local isKnownPlayerSpell = spellID and ns.API and ns.API.IsKnownSpellID
-                        and ns.API.IsKnownSpellID(spellID)
+                    local isKnownPlayerSpell = Trainer:IsClassSpellKnown(
+                        spellID, name, rankNum, hasRealRank)
                     local directlyKnown = isKnownPlayerSpell or isLearnedPetSpell or status == "used"
                     local entry = {
                         level = lvl,

@@ -471,7 +471,9 @@ end
 local function AuraRuntimeNeeded()
     local db = DB()
     if db.enabled == false or db.auraLayout == false then return false end
-    return ElementDB("TargetBuffs").enabled ~= false or ElementDB("TargetDebuffs").enabled ~= false
+    return ElementDB("TargetBuffs").enabled ~= false
+        or ElementDB("TargetDebuffs").enabled ~= false
+        or ElementDB("ToTDebuffs").enabled ~= false
 end
 
 local function EnsureEventFrame()
@@ -491,7 +493,20 @@ local function EnsureEventFrame()
                 M:ApplyAll()
                 M:RequestAuraUpdate()
             elseif event == "PLAYER_TARGET_CHANGED" then
-                M:RequestAuraUpdate()
+                local provider = ns.MoverAuraProvider
+                if provider and provider.InvalidateUnit then
+                    provider:InvalidateUnit("target")
+                    provider:InvalidateUnit("targettarget")
+                end
+                M:RequestAuraUpdate(true)
+            elseif event == "UNIT_TARGET" then
+                if arg1 == "target" then
+                    local provider = ns.MoverAuraProvider
+                    if provider and provider.InvalidateUnit then
+                        provider:InvalidateUnit("targettarget")
+                    end
+                    M:RequestAuraUpdate(true)
+                end
             elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_WATCH_UPDATE" or event == "UPDATE_QUEST_WATCH" then
                 if M._QueueQuestTrackerApply then M._QueueQuestTrackerApply(false) end
             elseif event == "UNIT_AURA" then
@@ -507,8 +522,10 @@ local function EnsureEventFrame()
         eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
         if eventFrame.RegisterUnitEvent then
             eventFrame:RegisterUnitEvent("UNIT_AURA", "target")
+            eventFrame:RegisterUnitEvent("UNIT_TARGET", "target")
         else
             eventFrame:RegisterEvent("UNIT_AURA")
+            eventFrame:RegisterEvent("UNIT_TARGET")
         end
     end
 

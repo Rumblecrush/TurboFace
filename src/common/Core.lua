@@ -1856,7 +1856,7 @@ SlashCmdList["TURBOFACE"] = function(msg)
                 end
                 ns:Chat("Dev", ("Forever feature bypass %s%s"):format(
                     active and "ENABLED" or "disabled",
-                    action == "bypass status" and "" or "; /reload before testing Unit Frames or Class Features"))
+                    action == "bypass status" and "" or "; /reload before testing Unit Frames, Cast Bars, or Class Features"))
                 return
             end
             ns:Chat("Dev", "usage: /tf dev bypass [on|off|status]")

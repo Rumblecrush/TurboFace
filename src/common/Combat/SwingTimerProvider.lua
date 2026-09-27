@@ -36,6 +36,10 @@ function Classic:UsesCharacterDamageCapture()
     return false
 end
 
+function Classic:UsesTargetCombatEstimator()
+    return false
+end
+
 function Classic:Attach()
     -- Classic obtains standalone weapon damage directly from UnitDamage and
     -- needs no Character/PaperDoll capture surface.
@@ -82,6 +86,27 @@ end
 
 function ns.SwingTimerProviderUsesCharacterDamageCapture()
     return Bool("UsesCharacterDamageCapture", false)
+end
+
+function ns.SwingTimerProviderUsesTargetCombatEstimator()
+    return Bool("UsesTargetCombatEstimator", false)
+end
+
+function ns.SwingTimerProviderObserveTargetCombat(unit, action, now)
+    local provider = Active()
+    local fn = provider and provider.ObserveTargetCombat
+    if type(fn) ~= "function" then return nil end
+    local ok, duration, guid = pcall(fn, provider, unit, action, now)
+    if not ok or type(duration) ~= "number" or duration <= 0 then return nil end
+    return duration, guid
+end
+
+function ns.SwingTimerProviderResetTargetCombat(guid)
+    local provider = Active()
+    local fn = provider and provider.ResetTargetCombat
+    if type(fn) ~= "function" then return false end
+    local ok = pcall(fn, provider, guid)
+    return ok
 end
 
 function ns.SwingTimerProviderAttach(ST)

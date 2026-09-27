@@ -298,11 +298,9 @@ local function GetOpenTrainerQueueContext(queue)
         end
     end
 
-    if IsTradeskillTrainer and IsTradeskillTrainer() then
-        local professionKey = Trainer:DetectTrainerProfession()
-        if professionKey then return "profession", NormalizeOwner(professionKey) end
-        return nil, nil
-    end
+    local professionKey = Trainer:DetectTrainerProfession()
+    if professionKey then return "profession", NormalizeOwner(professionKey) end
+    if IsTradeskillTrainer and IsTradeskillTrainer() then return nil, nil end
 
     -- A weapon master/general-skill trainer with no matching queued Skills row
     -- should do nothing, not masquerade as the player's class trainer.
@@ -321,6 +319,10 @@ local function IsQueueRecordKnown(record)
     end
     if record.scope == "skills" and Trainer:IsProfessionRankSpell(spellID)
         and Trainer.IsProfessionRankSpellKnown and Trainer:IsProfessionRankSpellKnown(spellID) then
+        return true
+    end
+    if record.scope == "class" and Trainer.IsClassSpellKnown
+        and Trainer:IsClassSpellKnown(spellID, record.name, record.rankNum, record.hasRealRank) then
         return true
     end
     if ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then return true end
@@ -608,4 +610,3 @@ function Trainer:DebugTrainingQueue()
     end
     if count > 30 then ns:Chat("TrainerDbg", "trainer row output truncated at 30") end
 end
-

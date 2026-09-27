@@ -1674,7 +1674,8 @@ local function OnUpdate(self, elapsed)
     -- The target presentation intentionally uses one embedded row only. Enemy
     -- off-hand state is still tracked for timing accuracy elsewhere, but it is
     -- not presented as a second MH/OH row on the target unit frame.
-    if in_combat and enemyFrame and UnitExists("target") and UnitCanAttack("player","target") then
+    if in_combat and enemyFrame
+        and UnitExists("target") and UnitCanAttack("player","target") then
         if target.main_timer > 0 then
             target.main_timer = math.max(target.main_timer - dt, 0)
         end
@@ -1892,6 +1893,9 @@ local function ActivateRuntime()
     ns.RegisterUnitEvent(eventFrame, "UNIT_INVENTORY_CHANGED", "player")
     ns.RegisterUnitEvent(eventFrame, "UNIT_DAMAGE", "player")
     ns.RegisterUnitEvent(eventFrame, "UNIT_RANGEDDAMAGE", "player")
+    if ns.SwingTimerProviderUsesTargetCombatEstimator() then
+        ns.RegisterUnitEvent(eventFrame, "UNIT_COMBAT", "player")
+    end
     eventFrame:RegisterEvent("ACTIONBAR_UPDATE_STATE")  -- wake when Attack toggles
     eventFrame:RegisterEvent("CURRENT_SPELL_CAST_CHANGED")  -- on-next-swing queue
     eventFrame:RegisterEvent("UI_ERROR_MESSAGE")
@@ -2024,6 +2028,19 @@ swingEventHandlers.PLAYER_REGEN_ENABLED = function()
     end
 end
 
+swingEventHandlers.UNIT_COMBAT = function(unit, action)
+    local duration, guid = ns.SwingTimerProviderObserveTargetCombat(unit, action, GetTime() or 0)
+    if not duration then return end
+
+    target.guid = guid or target.guid
+    target.main_speed = duration
+    target.main_timer = duration
+    target.has_offhand = false
+    target.off_timer = 0
+    RecordTargetSwing(target.guid, false, duration)
+    WakeDriver()
+end
+
 swingEventHandlers.PLAYER_SWING = function(duration, swingType)
     if not IsReadableNumber(duration) or duration <= 0 then return end
     local slot = PlayerSwingSlot(swingType)
@@ -2070,10 +2087,12 @@ swingEventHandlers.PLAYER_TARGET_CHANGED = function()
     SaveCurrentTargetSwing()
     if UnitExists("target") then
         target.guid = UnitGUID("target")
+        ns.SwingTimerProviderResetTargetCombat(target.guid)
         UpdateTargetSpeeds()
         RestoreTargetSwing(target.guid)
     else
         target.guid = nil
+        ns.SwingTimerProviderResetTargetCombat(nil)
         target.main_timer = 0
         target.off_timer = 0
     end
@@ -2343,6 +2362,7 @@ swingEventHandlers.PLAYER_ENTERING_WORLD = function()
     player_cast_guid = nil
     player_ranged_cast_guid = nil
     player_ranged_cast_kind = nil
+    ns.SwingTimerProviderResetTargetCombat(UnitGUID("target"))
     UpdatePlayerSpeeds()
     SnapshotEquippedWeaponIDs()
     if IS_RANGED_CLASS then

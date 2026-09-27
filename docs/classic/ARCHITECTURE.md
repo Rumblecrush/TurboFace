@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-09-23
-**Current addon version:** 0.18.2
+**Last updated:** 2026-09-27
+**Current addon version:** 0.18.3
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -1904,6 +1904,12 @@ and does not imply ownership of the rest of the native plate.
 Countdown presentation is ceiling-rounded with seconds below 90s, minutes from 90s, hours from one
 hour, and no decimal sub-second phase.
 
+`Core/Config.lua` owns the portable `ns.AuraPresentation` visual contract used by all TurboFace aura
+renderers. Countdown text is bottom-center inside the icon at `(0, 1)`; stack count is top-right
+inside at `(-2, -2)`; both use the Auras font/style and the global `auraTimerSize`. Nameplate icon
+dimensions, row layout, filters, and limits remain independently configurable. Do not reintroduce
+renderer-local timer/count anchors or font sizes.
+
 ### 11.11 Swing timing and combo dots
 
 Nameplate Swing Timer is independently gated by `bubbleNameplates.swingTimer` and does not depend on
@@ -3158,15 +3164,15 @@ Gate: `trainerEnabled`. TurboFace owns the Training runtime: trainer/merchant ca
 
 **Profession training data and static recipes.** No TrainerSpells profession or recipe seed database ships in TurboFace. `TrainerCapture.lua` reads Blizzard's trainer APIs and stores Training observations in `TurboFaceTrainerDB.professionData[profession][skillReq]`. The separate Recipes view consumes the embedded MIT-licensed LibProfessionDB Classic Era catalog and never writes it into SavedVariables. Apprentice/Journeyman/Expert/Artisan proficiency services remain owned by the Spellbook Skills view rather than the profession Training panel. The 0.17.75 migration marker `TurboFaceTrainerDB.provenanceProfessionResetV1` clears older mixed profession/recipe caches once so no previously merged TrainerSpells rows survive the provenance boundary. The normalized `recipeData` container is retained only so older SavedVariables remain harmless; normal capture no longer writes it and current presentation does not read it.
 
-**Saved variables.** `TurboFaceTrainerDB` is account-wide and stores class/pet seed merges plus observed trainer/merchant metadata; it is intentionally outside `TurboFaceDB` profiles and outside build-invalidated `TurboFaceCacheDB`. `TurboFaceTrainerCharDB` stores character-local ignore lists, collapsed groups, known pet state, and Training Queue state. `InitSavedVariables()` is idempotent and normalizes every owned container at login and before capture.
+**Saved variables.** `TurboFaceTrainerDB` is account-wide and stores class/pet seed merges plus observed trainer/merchant metadata; it is intentionally outside `TurboFaceDB` profiles and outside build-invalidated `TurboFaceCacheDB`. Character-local trainer status (`available`/`used`) is not persisted in its class catalog. `TurboFaceTrainerCharDB` stores character-local ignore lists, collapsed groups, known pet state, and Training Queue state. `InitSavedVariables()` is idempotent and normalizes every owned container at login and before capture.
 
 **Deferred static data.** Retained `Trainer/data/*.lua` files register loader closures in `Trainer.BuiltinLoaders`; no large table is constructed when Training is disabled. `BuiltinMerge.lua` merges only class, Hunter pet-trainer, and Warlock pet seed facts, then releases staging tables. LibProfessionDB's generated files independently register `ns.LibProfessionDBDataLoaders`; those closures materialize the recipe tables only on the first Recipes view and are then released. Profession/recipe SavedVariable seed merge branches no longer exist.
 
-**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
+**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Exact known-spell identity is supplemented by a cached live spellbook name/rank snapshot because some clients replace older ranks and report their numeric IDs as unknown. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
 
 **Profession side views.** `Trainer/UI_Profession.lua` owns `Training` and `Recipes` next to the native profession window. Training builds an always-available baseline from trainer-only recipes in the embedded MIT-licensed LibProfessionDB 1.7.0 subset, filters proficiency-rank rows into the Skills owner, and overlays the persistent live-trainer snapshot for authoritative cost/status details. When LibProfessionDB deliberately lacks a verified Vanilla trainer learn requirement, Training keeps the row conservatively under Not Yet Available as `Skill ?`; it never substitutes the recipe's crafting-difficulty threshold. Recipes admits recipes with a confirmed vendor, quest, container, or drop path. LibProfessionDB's client-derived recipe-item index excludes profession-rank books. Because its community-derived trainer flags over-classify some externally acquired recipes, mixed trainer/external rows remain in Recipes while only trainer-without-external-source rows seed Training; observed live rows overlay the baseline by spell ID. Auto-taught, unknown-source, and never-implemented rows remain excluded. The currently open Classic TradeSkill book supplies live known state and icons. Recipes separates missing, ignored, and already-known entries, exposes only external acquisition sources in tooltips, and refreshes on `TRADE_SKILL_UPDATE`. The generated database files register deferred closures at startup and materialize when either profession view first needs them.
 
-**General-skill classification.** `Trainer/SkillData.lua` owns weapon-skill identities, primary/secondary profession starters, and profession rank requirements. `TrainerCapture.lua` resolves Weapon Master and profession-rank services into `skillData` so they cannot leak into the class-spell catalog. Current profession ownership is read through `ns.Skills`, with the legacy skill-line APIs used only as compatibility fallback.
+**General-skill classification.** `Trainer/SkillData.lua` owns weapon-skill identities, primary/secondary profession starters, and profession rank requirements. `TrainerCapture.lua` resolves profession ownership directly from each trainer service's skill line rather than requiring the coarser `IsTradeskillTrainer()` flag; Weapon Master and profession-rank services resolve into `skillData` so they cannot leak into the class-spell catalog. A one-time LibProfessionDB identity scrub removes recipe IDs captured into class data by older builds. Current profession ownership is read through `ns.Skills`, with the legacy skill-line APIs used only as compatibility fallback.
 
 **Training Queue.** Queue state is per-character. Class-spell rows, queueable Skills rows, and trainer-taught profession rows can be ordered for auto-training. The worker respects explicit queue order, stops when the next eligible priority cannot be afforded, submits selected trainer indices in descending index order only to survive Blizzard list reindexing, and removes intent only after the trainer/known-state confirms success. Book/quest ranks and profession Recipes remain non-queueable.
 
@@ -3482,6 +3488,12 @@ Modern active-quest iteration uses Blizzard's explicit active count rather than 
 table length, and reconciles each gossip entry's completion flag with `C_QuestLog.IsComplete`;
 this is required when one NPC mixes completed and in-progress quests and the gossip payload's
 completion field is missing or stale.
+
+NPC interaction events are observation boundaries, not action callbacks. Gossip selection is
+delayed until Blizzard has populated the interaction, while quest selection, acceptance,
+completion, and reward actions are serialized onto later frames. The next gossip scan begins only
+after `QUEST_ACCEPTED` or `QUEST_TURNED_IN` confirms the preceding action; this prevents a stale
+scan from racing Blizzard's own quest-frame transition and latching the NPC interaction.
 
 Spirit Healer automation is destructive (durability/sickness), defaults off, is
 ghost-gated, and supports Shift cancellation.

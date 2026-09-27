@@ -1,6 +1,58 @@
 local _, ns = ...
 local Trainer = ns.Trainer
 local GetSpellInfo = ns.API.GetSpellInfo
+local GetNumSpellTabs = ns.API.GetNumSpellTabs
+local GetSpellTabInfo = ns.API.GetSpellTabInfo
+local GetSpellBookItemName = ns.API.GetSpellBookItemName
+
+-- Exact spell IDs are not a complete learned-state authority on clients that
+-- replace an older rank in the spellbook. Keep a compact name -> highest-rank
+-- snapshot of the player's actual spellbook as the fallback shared by the
+-- Class Training list and its auto-training queue.
+local knownSpellbookRanks = {}
+local knownSpellbookRanksDirty = true
+
+function Trainer:InvalidateKnownSpellbookRanks()
+    knownSpellbookRanksDirty = true
+    wipe(knownSpellbookRanks)
+end
+
+function Trainer:GetKnownSpellbookRanks()
+    if not knownSpellbookRanksDirty then return knownSpellbookRanks end
+    wipe(knownSpellbookRanks)
+
+    if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
+        local tabs = tonumber(GetNumSpellTabs()) or 0
+        for tab = 1, tabs do
+            local _, _, offset, count = GetSpellTabInfo(tab)
+            offset, count = tonumber(offset) or 0, tonumber(count) or 0
+            for index = offset + 1, offset + count do
+                local name, subText = GetSpellBookItemName(index, BOOKTYPE_SPELL or "spell")
+                if type(name) == "string" and name ~= "" then
+                    local rank = type(subText) == "string" and tonumber(subText:match("%d+")) or nil
+                    rank = rank or 1
+                    knownSpellbookRanks[name] = math.max(knownSpellbookRanks[name] or 0, rank)
+                end
+            end
+        end
+    end
+
+    knownSpellbookRanksDirty = false
+    return knownSpellbookRanks
+end
+
+function Trainer:IsClassSpellKnown(spellID, name, rankNum, hasRealRank)
+    if spellID and ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then
+        return true
+    end
+    if type(name) ~= "string" or name == "" then
+        name = spellID and GetSpellInfo and GetSpellInfo(spellID) or nil
+    end
+    local knownRank = name and self:GetKnownSpellbookRanks()[name] or nil
+    if not knownRank then return false end
+    if hasRealRank then return knownRank >= (tonumber(rankNum) or 1) end
+    return true
+end
 
 -- =============================================================================
 -- SPELLBOOK "SKILLS" DATA
@@ -443,6 +495,54 @@ function Trainer:ScrubGeneralSkillsFromClassData(classToken)
     end
 end
 
+-- Older Forever builds gated profession detection on IsTradeskillTrainer().
+-- That legacy boolean can be false even while trainer services expose a real
+-- profession skill line, allowing recipes to leak into the account-wide class
+-- catalog. LibProfessionDB is the canonical recipe identity source, so use it
+-- once to remove every such contaminant rather than special-casing one recipe.
+function Trainer:ScrubProfessionRecipesFromClassData()
+    local db = TurboFaceTrainerDB
+    if not db or db.professionCaptureIsolationV1 == true then return end
+    local database = ns.EnsureProfessionRecipeDatabase and ns:EnsureProfessionRecipeDatabase() or nil
+    if not database or not database.GetProfessions or not database.GetRecipes then return end
+
+    local recipeIDs = {}
+    for _, professionID in ipairs(database:GetProfessions() or {}) do
+        for spellID in pairs(database:GetRecipes(professionID) or {}) do
+            recipeIDs[tonumber(spellID)] = true
+        end
+    end
+
+    for _, levels in pairs(db.data or {}) do
+        if type(levels) == "table" then
+            for _, spells in pairs(levels) do
+                if type(spells) == "table" then
+                    for storedID in pairs(spells) do
+                        if recipeIDs[tonumber(storedID)] then spells[storedID] = nil end
+                    end
+                end
+            end
+        end
+    end
+    db.professionCaptureIsolationV1 = true
+end
+
+function Trainer:ScrubClassTrainerTransientStatus()
+    local data = TurboFaceTrainerDB and TurboFaceTrainerDB.data
+    if type(data) ~= "table" then return end
+    for _, levels in pairs(data) do
+        if type(levels) == "table" then
+            for _, spells in pairs(levels) do
+                if type(spells) == "table" then
+                    for _, entry in pairs(spells) do
+                        if type(entry) == "table" then entry.status = nil end
+                    end
+                end
+            end
+        end
+    end
+end
+
 function Trainer:IsPrimaryProfessionStarterSpell(spellID)
     local professionKey = self:GetProfessionStarterKey(spellID)
     return professionKey ~= nil and not self:IsSecondaryProfession(professionKey)
@@ -734,6 +834,12 @@ function Trainer:MigrateLegacySkillCaptures()
     -- row permanent. A cheap deterministic scrub is safer than another one-shot
     -- migration version and also handles numeric IDs serialized as strings.
     self:ScrubGeneralSkillsFromClassData()
+    self:ScrubProfessionRecipesFromClassData()
+    -- Trainer service status belongs to the character currently visiting the
+    -- NPC. Class discovery data is account-wide, so persisting available/used
+    -- here lets one Warrior's scan lie to every other Warrior. Learned state is
+    -- now resolved from the current character's spellbook instead.
+    self:ScrubClassTrainerTransientStatus()
     db.migratedSpellbookSkillsV1 = true
 
     -- General skills are queueable now. Older builds either misfiled these
