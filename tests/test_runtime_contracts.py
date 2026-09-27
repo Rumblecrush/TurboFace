@@ -226,6 +226,15 @@ assert(rewarded == 1)
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_loot_frame_accepts_either_documented_player_field(self) -> None:
+        source = (ROOT / "src" / "common" / "LootFrame.lua").read_text()
+
+        self.assertIn("local function OwnLootMessage(msg, playerName, playerName2)", source)
+        self.assertIn("StripRealm(playerName) == ownName", source)
+        self.assertIn("StripRealm(playerName2) == ownName", source)
+        self.assertIn("OwnLootMessage(msg, playerName, playerName2)", source)
+        self.assertNotIn("OwnLootMessage(msg, receiver)", source)
+
     def test_forever_development_restrictions_and_bypass(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the client-policy contract")
@@ -323,6 +332,53 @@ assert(duration == 2)
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        shared = (ROOT / "src" / "common" / "Combat" / "SwingTimers.lua").read_text()
+        self.assertIn("function SwingTimers:RecordNameplateSwing(guid, duration, now)", shared)
+        self.assertIn("SwingTimers:RecordNameplateSwing(guid, duration, now)", shared)
+        self.assertIn("swingEventHandlers.UNIT_COMBAT = OnProviderTargetCombat", shared)
+        self.assertIn('ns.RegisterUnitEvent(nameplateRuntimeFrame, "UNIT_COMBAT", "player")', shared)
+        self.assertIn("and not nameplateRuntimeActivated", shared)
+        self.assertIn("if exists == false or attackable == false then return false end", shared)
+
+        forever_nameplates = (
+            ROOT / "src" / "forever" / "Nameplates" / "ForeverNativeAdapter.lua"
+        ).read_text()
+        self.assertIn("if attackable == false then StopSwing(st); return end", forever_nameplates)
+        self.assertIn("if currentGUID and currentGUID ~= st.guid", forever_nameplates)
+        self.assertIn('widthGuide:SetPoint("LEFT", st.root, "LEFT", 0, 0)', forever_nameplates)
+        self.assertIn('widthGuide:SetPoint("RIGHT", st.root, "RIGHT", 0, 0)', forever_nameplates)
+        self.assertIn("host._tfSwingWidth = width", forever_nameplates)
+        self.assertIn('rootCenterGuide:SetPoint("CENTER", host, "CENTER", 0, 0)', forever_nameplates)
+        self.assertIn('hpBottomGuide:SetPoint("CENTER", hp, "BOTTOM", 0, 0)', forever_nameplates)
+        self.assertIn("host._tfSwingCenterAnchor = host", forever_nameplates)
+        self.assertIn("host._tfSwingYOffset = bottomY - rootY", forever_nameplates)
+        self.assertIn("host._tfSwingYOffset = WHOLE_PLATE_HP_BOTTOM_Y", forever_nameplates)
+        self.assertIn("local SWING_Y_NUDGE = -3", forever_nameplates)
+        self.assertIn("f.leftGlow:SetVertexColor(1.0, 0.10, 0.06, 0.82)", forever_nameplates)
+        self.assertIn("f.leftCore:SetVertexColor(1.0, 0.06, 0.03, 0.96)", forever_nameplates)
+        self.assertIn("local f = BNP:_EnsureSwing(host)", forever_nameplates)
+        self.assertIn('f:SetFrameStrata("TOOLTIP")', forever_nameplates)
+        self.assertIn("f:SetFrameLevel(10000)", forever_nameplates)
+        self.assertIn("if f:GetParent() ~= UIParent then f:SetParent(UIParent) end", forever_nameplates)
+        self.assertIn('f.ready:SetDrawLayer("OVERLAY", 7)', forever_nameplates)
+        self.assertIn("BNP:_AnchorSwingFrame(f, host)", forever_nameplates)
+        self.assertIn("if st.hiddenByNative or not host:IsShown()", forever_nameplates)
+        self.assertIn("BNP:_ShowSwingProgress(f, progress)", forever_nameplates)
+        self.assertIn("BNP:_SetSwingReady(f, true)", forever_nameplates)
+        self.assertNotIn('f.progress = CreateFrame("StatusBar", nil, f)', forever_nameplates)
+
+        common_nameplates = (
+            ROOT / "src" / "common" / "Nameplates" / "BubbleNameplates.lua"
+        ).read_text()
+        self.assertIn(
+            "local anchor = plate._tfSwingAnchor or healthBarsContainer or hp",
+            common_nameplates,
+        )
+        self.assertIn(
+            'frame:SetPoint("TOP", detachedCenter, "CENTER", 0, detachedYOffset - 1)',
+            common_nameplates,
+        )
 
     def test_forever_defaults_match_promoted_live_configuration(self) -> None:
         luajit = shutil.which("luajit")

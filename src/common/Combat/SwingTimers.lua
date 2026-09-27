@@ -202,6 +202,7 @@ standaloneOffFrame    = nil
 standaloneRangedFrame = nil
 standaloneTargetFrame = nil
 local eventFrame  = nil
+local runtimeActivated = false
 
 local BAR_COLOR_PLAYER_MAIN = { 255/255, 229/255, 180/255 }  -- peach (queued spells still flip it orange)
 local BAR_COLOR_PLAYER_OFF  = { 255/255, 229/255, 180/255 }
@@ -425,6 +426,46 @@ end
 
 function SwingTimers:ClearNameplateStates()
     wipe(nameplateSwingStates)
+end
+
+-- Publish a client-provider swing observation to the independent nameplate
+-- presentation. Forever's UNIT_COMBAT estimator can identify only the selected
+-- hostile (the same attribution boundary as its Target Swing Timer), while
+-- Classic continues to populate this table from authoritative CLEU source GUIDs.
+function SwingTimers:RecordNameplateSwing(guid, duration, now)
+    if not NameplateSwingGateOn() or not guid then return false end
+    duration = tonumber(duration)
+    if not duration or duration <= 0 then return false end
+    local unit = ns.guidToNameplateUnit and ns.guidToNameplateUnit[guid]
+    if not unit then return false end
+    local exists
+    if ns.API and ns.API.ReadUnitExists then
+        exists = ns.API.ReadUnitExists(unit)
+    else
+        exists = UnitExists(unit)
+    end
+    local attackable
+    if ns.API and ns.API.ReadUnitCanAttack then
+        attackable = ns.API.ReadUnitCanAttack("player", unit)
+    else
+        attackable = UnitCanAttack("player", unit)
+    end
+    -- Forever can make both booleans opaque during combat. The GUID came from
+    -- the selected-target estimator and the unit token came from the live
+    -- nameplate binding, so reject only an explicit readable contradiction.
+    if exists == false or attackable == false then return false end
+
+    now = type(now) == "number" and now or (GetTime() or 0)
+    local state = nameplateSwingStates[guid]
+    if not state then
+        state = {}
+        nameplateSwingStates[guid] = state
+    end
+    state.lastSwingAt = now
+    state.duration = duration
+    state.readyAt = now + duration
+    if ns.BubbleNameplates then ns.BubbleNameplates:OnEnemySwing(guid) end
+    return true
 end
 
 -- =============================================================================
@@ -1319,6 +1360,27 @@ local function OnNameplateCombatLog(combatInfo)
     if ns.BubbleNameplates then ns.BubbleNameplates:OnEnemySwing(sourceGUID) end
 end
 
+-- One observation feeds both consumers. The independent nameplate runtime owns
+-- UNIT_COMBAT whenever its feature is enabled; otherwise the broader global
+-- Swing Timers runtime owns it for the Target row. This prevents two event
+-- frames from sampling the same result and learning a zero-length cadence.
+local function OnProviderTargetCombat(unit, action)
+    local now = GetTime() or 0
+    local duration, guid = ns.SwingTimerProviderObserveTargetCombat(unit, action, now)
+    if not duration then return end
+
+    SwingTimers:RecordNameplateSwing(guid, duration, now)
+    if runtimeActivated then
+        target.guid = guid or target.guid
+        target.main_speed = duration
+        target.main_timer = duration
+        target.has_offhand = false
+        target.off_timer = 0
+        RecordTargetSwing(target.guid, false, duration)
+        WakeDriver()
+    end
+end
+
 -- Combat-log payload is decoded once by ns.CLEU and passed in as `combatInfo`.
 local function OnCombatLog(combatInfo)
     if not PLAYER_GUID then PLAYER_GUID = UnitGUID("player") end
@@ -1800,7 +1862,7 @@ WakeDriver = function()
     if ns.Cadence then ns.Cadence:Add(ST, UPDATE_THROTTLE, OnUpdate, true) end
 end
 
-local function NameplateRuntimeOnEvent(_, event)
+local function NameplateRuntimeOnEvent(_, event, unit, action)
     if event == "PLAYER_REGEN_DISABLED" then
         nameplateInCombat = true
         PrimeVisibleNameplateStates()
@@ -1810,6 +1872,8 @@ local function NameplateRuntimeOnEvent(_, event)
         if ns.BubbleNameplates and ns.BubbleNameplates.RefreshSwingFeature then
             ns.BubbleNameplates:RefreshSwingFeature()
         end
+    elseif event == "UNIT_COMBAT" then
+        OnProviderTargetCombat(unit, action)
     end
 end
 
@@ -1822,6 +1886,12 @@ local function ActivateNameplateRuntime()
     end
     nameplateRuntimeFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     nameplateRuntimeFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    if ns.SwingTimerProviderUsesTargetCombatEstimator() then
+        -- The nameplate path is independent of the Global Swing Timers gate.
+        -- Transfer this event from the broad runtime if it is already active.
+        if eventFrame then eventFrame:UnregisterEvent("UNIT_COMBAT") end
+        ns.RegisterUnitEvent(nameplateRuntimeFrame, "UNIT_COMBAT", "player")
+    end
     if ns.CLEU then
         ns.CLEU:Register(OnNameplateCombatLog, { SWING_DAMAGE = true, SWING_MISSED = true })
     end
@@ -1836,6 +1906,9 @@ local function DeactivateNameplateRuntime()
     if nameplateRuntimeFrame then nameplateRuntimeFrame:UnregisterAllEvents() end
     if ns.CLEU then ns.CLEU:Unregister(OnNameplateCombatLog) end
     SwingTimers:ClearNameplateStates()
+    if runtimeActivated and ns.SwingTimerProviderUsesTargetCombatEstimator() then
+        ns.RegisterUnitEvent(eventFrame, "UNIT_COMBAT", "player")
+    end
 end
 
 function SwingTimers:RefreshNameplateRuntime()
@@ -1875,7 +1948,6 @@ local player_ranged_cast_kind
 -- disabled Swing Timers module completely off the shared CLEU dispatcher and
 -- out of WoW's event dispatch path.
 eventFrame = CreateFrame("Frame")
-local runtimeActivated = false
 
 local function ActivateRuntime()
     if runtimeActivated then return end
@@ -1893,7 +1965,7 @@ local function ActivateRuntime()
     ns.RegisterUnitEvent(eventFrame, "UNIT_INVENTORY_CHANGED", "player")
     ns.RegisterUnitEvent(eventFrame, "UNIT_DAMAGE", "player")
     ns.RegisterUnitEvent(eventFrame, "UNIT_RANGEDDAMAGE", "player")
-    if ns.SwingTimerProviderUsesTargetCombatEstimator() then
+    if ns.SwingTimerProviderUsesTargetCombatEstimator() and not nameplateRuntimeActivated then
         ns.RegisterUnitEvent(eventFrame, "UNIT_COMBAT", "player")
     end
     eventFrame:RegisterEvent("ACTIONBAR_UPDATE_STATE")  -- wake when Attack toggles
@@ -2028,18 +2100,7 @@ swingEventHandlers.PLAYER_REGEN_ENABLED = function()
     end
 end
 
-swingEventHandlers.UNIT_COMBAT = function(unit, action)
-    local duration, guid = ns.SwingTimerProviderObserveTargetCombat(unit, action, GetTime() or 0)
-    if not duration then return end
-
-    target.guid = guid or target.guid
-    target.main_speed = duration
-    target.main_timer = duration
-    target.has_offhand = false
-    target.off_timer = 0
-    RecordTargetSwing(target.guid, false, duration)
-    WakeDriver()
-end
+swingEventHandlers.UNIT_COMBAT = OnProviderTargetCombat
 
 swingEventHandlers.PLAYER_SWING = function(duration, swingType)
     if not IsReadableNumber(duration) or duration <= 0 then return end

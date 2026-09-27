@@ -528,6 +528,14 @@ Arbitrary visible plates without a stable alias intentionally show no quantitati
 
 Forever does not use the Classic native-FontString reanchor path. TurboFace owns a detached FontString and passes opaque `UnitHealth` through the verified Blizzard abbreviation/write path without Lua arithmetic or formatting.
 
+The Forever nameplate swing presentation also remains detached. Its horizontal span is resolved
+from an addon-owned guide attached write-only to the full native root, while its vertical point is
+the native health bar's bottom edge. TurboFace reads only the addon-owned guide, never the native
+root or health bar geometry, and the shared Classic renderer owns the actual swing textures. Two
+addon-owned guides cache only the vertical offset from the detached root center to the HP bottom.
+The final widget anchors directly to the same detached root center as the HP text, avoiding any
+cross-scale horizontal conversion and continuing to track safely when coordinates become opaque.
+
 Whole-nameplate and fill-only centering use known anchor identities rather than forbidden coordinate reads.
 
 ### 9.6 Native name shadow
@@ -1115,6 +1123,13 @@ target's cadence from melee-like `UNIT_COMBAT` results received by the player wh
 targeting the player. Plausible intervals update the learned duration; every qualifying result
 resynchronizes the visible timer. This is intentionally a Forever provider policy rather than a
 client branch in the shared timer engine.
+
+The independent Nameplate Swing Timer consumes the same observation when the selected target has a
+visible hostile nameplate. Its lightweight nameplate runtime owns `UNIT_COMBAT` whenever that feature
+is enabled, even if the Global Swing Timers module is disabled; if the nameplate feature is disabled,
+event ownership returns to the global runtime for the Target row. A single observation is therefore
+never sampled twice. Forever's event does not expose an attacker GUID, so unselected enemies cannot
+be attributed safely and are deliberately left without inferred countdowns.
 
 `/tf dev bypass` toggles the Forever-only developer override. The override is stored in
 `TurboFaceCompatDB`, outside portable profiles, so it survives the `/reload` required by protected

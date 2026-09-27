@@ -500,12 +500,39 @@ function BNP:_AnchorSwingFrame(frame, plate)
     local hp = plate and plate.hp
     if not frame or not hp then return false end
 
-    -- Blizzard's HealthBarsContainer is the native horizontal chassis. The
-    -- health StatusBar itself can be narrower than the surrounding artwork.
+    -- A detached client adapter can resolve the full chassis width through an
+    -- addon-owned guide while retaining the health bar as the vertical source.
+    -- Keeping those axes separate prevents a taller native root (name row,
+    -- selection art, etc.) from pushing the four-pixel swing band downward.
+    local detachedWidth = plate._tfSwingWidth
+    local detachedCenter = plate._tfSwingCenterAnchor
+    local detachedYOffset = plate._tfSwingYOffset
+    if type(detachedWidth) == "number" and detachedWidth > 0 then
+        local positionAnchor = detachedCenter or hp
+        if frame._anchorChassis ~= positionAnchor or frame._anchorWidth ~= detachedWidth
+            or frame._anchorYOffset ~= detachedYOffset then
+            frame:ClearAllPoints()
+            if detachedCenter and type(detachedYOffset) == "number" then
+                frame:SetPoint("TOP", detachedCenter, "CENTER", 0, detachedYOffset - 1)
+            else
+                frame:SetPoint("TOP", hp, "BOTTOM", 0, -1)
+            end
+            frame:SetWidth(detachedWidth)
+            frame:SetHeight(4)
+            frame._anchorChassis = positionAnchor
+            frame._anchorWidth = detachedWidth
+            frame._anchorYOffset = detachedYOffset
+        end
+        return true
+    end
+
+    -- Blizzard's HealthBarsContainer is Classic's native horizontal chassis.
+    -- Detached client adapters may provide a broader, write-only native root
+    -- when their health StatusBar is narrower than the complete nameplate.
     local unitFrame = plate.nativeUnitFrame
         or (plate.parentPlate and plate.parentPlate.UnitFrame)
     local healthBarsContainer = unitFrame and unitFrame.HealthBarsContainer
-    local anchor = healthBarsContainer or hp
+    local anchor = plate._tfSwingAnchor or healthBarsContainer or hp
 
     if frame._anchorChassis ~= anchor then
         frame:ClearAllPoints()
@@ -513,6 +540,8 @@ function BNP:_AnchorSwingFrame(frame, plate)
         frame:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -1)
         frame:SetHeight(4)
         frame._anchorChassis = anchor
+        frame._anchorWidth = nil
+        frame._anchorYOffset = nil
     end
     return true
 end
