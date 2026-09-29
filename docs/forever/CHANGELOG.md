@@ -1,7 +1,94 @@
 # TurboFace Forever Changelog
 
+## 0.18.7 — Minimap edge placement
+
+- Refreshed **Rumblecrush's Preset** from the supplied 2026-09-29 schema-79 export. The sparse preset now carries the current Forever module gates, Grocery button size and position, recipe-toast mover, updated target aura layout, minimap configuration, utility positions, and disabled unsupported combat surfaces.
+- Added a Forever-only Minimap option that lets Blizzard Edit Mode move the visible minimap artwork flush with the screen edge instead of stopping at the transparent padding around `MinimapCluster`.
+- TurboFace changes only the cluster's screen clamp. Blizzard Edit Mode continues to own the minimap anchor, dragging, and saved layout.
+- The override reapplies when Blizzard recalculates its Edit Mode selection bounds, without an `OnUpdate` poll.
+- Aligned the TurboFace minimap button's drag calculation with LibDBIcon: it now uses `math.atan2`, the minimap's effective scale, and direct cursor-angle placement instead of a sensitivity workaround.
+- Added a Forever-only **Recipe / Alert Toasts** mover. It repositions Blizzard's stable `AlertFrame` base anchor, so pooled “New Recipe Learned” notifications follow the saved location without TurboFace taking over their queue, animations, or click behavior. Other Blizzard alerts in that shared stack move with it.
+- Added a live **Grocery Button Icon Size** slider. The launcher icon, quickslot border, and Grocery mover overlay now resize together while retaining the saved button position.
+
+## 0.18.6 — Class Features promoted
+
+- Removed the Forever development restriction from the TurboFace Class Features master. The option
+  is now normally interactive and the player-owned reminder runtime follows the portable
+  `modules.class` preference without requiring `/tf dev bypass`.
+- Promoted Class Features to enabled in the Forever defaults for new/default configurations. Existing
+  explicit user profile choices remain authoritative.
+
+## 0.18.5 — Leash Timer Midnight compatibility
+
+- Marked Leash Timer unavailable on Forever after live testing confirmed that the remaining public
+  events cannot reliably attribute every interaction to an individual enemy. Its Global-tab toggle
+  is disabled with an explanatory tooltip, the mover row is omitted, and runtime activation fails
+  closed while the Classic implementation remains intact.
+- Routed Leash Timer identity, name, level, classification, combat-state, raid-marker, and movement
+  reads through secret-safe `ns.API` adapters. Unreadable hostile unit data now fails closed rather
+  than being compared, formatted, or interpreted as an out-of-combat/stationary result.
+- Preserved the precise Classic combat-log path while adding Forever fallbacks from readable
+  `UNIT_SPELLCAST_SUCCEEDED:player`, `UNIT_COMBAT:player`, and `PLAYER_TARGET_DIED` events. Harmful
+  player casts can reset the current engaged target; incoming damage resets only when exactly one
+  tracked enemy makes attribution unambiguous.
+- Guarded optional event registration and nameplate enumeration, and rejected inaccessible combat-
+  log fields if a deprecation fallback happens to expose an opaque payload.
+
+## 0.18.4 — Skill Tracker modern API repair
+
+- Restored the Forever Skill Tracker through `C_SkillInfo`. The client compatibility layer now
+  normalizes modern `SkillLineAttributes` records to the legacy tuple consumed by the shared
+  scanner, including header expansion state, current rank, modifier, and maximum rank.
+- Routed skill-line enumeration and header expansion/collapse through `ns.API` on both clients, and
+  made unavailable/restricted scans fail closed instead of raising a loop or arithmetic error.
+- Replaced Forever's removed talent-tab dependency with localized player-spellbook skill-line names
+  when filtering class skills, preventing class rows with a `5 × level` cap from being presented as
+  weapon skills. The profession Training fallback now uses the same compatibility boundary.
+- Collapsed duplicate modern skill-line records by their locale-safe canonical profession key. Each
+  profession now renders once, using the duplicate row with the highest complete rank/cap snapshot.
+
 ## 0.18.3 — aura, trainer, automation, and target swing recovery
 
+- Corrected nameplate buff geometry from the historical `26x18` rectangle to
+  the square size represented by the single Buff Icon Size option. Forever's
+  protected aura-controller signature now includes dimensions, layout, offsets,
+  filters, and duration bounds so changing those settings rebuilds active aura
+  containers instead of retaining stale geometry.
+- Fixed the target castbar caching and comparing opaque `castGUID` strings from
+  `UNIT_SPELLCAST_*` events. Event GUIDs now cross an accessibility guard before
+  entering addon state; readable Classic/player GUIDs retain mismatch filtering,
+  while secret target GUIDs safely fall back to event-driven transitions.
+- Made target cast timing explicitly dual-mode. Readable timestamps retain the
+  animated fill and countdown; opaque Forever timestamps now show a static
+  Casting/Channeling bar driven by start/stop/fail events, preventing protected
+  zero-like durations from reaching cadence division.
+- Junk-marked items in Blizzard bags now desaturate their item art in addition
+  to showing the coin badge, matching the subdued appearance used while an item
+  is unavailable or being sold. Pooled buttons are restored when the mark or
+  slot contents change.
+- Matched detached target-debuff borders to the Forever nameplate renderer's
+  centered, explicitly sized rounded ring. This removes fractional corner-anchor
+  rounding differences and adds the same red harmful-aura fallback while retaining
+  Blizzard-bound dispel-school colors.
+- Restored a secret-safe path for the opt-in Class Buff reminder, including Warrior Battle Shout.
+  The reminder now uses authoritative readable aura state out of combat, retains its last known
+  state while Forever hides aura identity, and dismisses after a readable successful player cast
+  without attempting to inspect or reconstruct secret aura data.
+- Restored a reduced Warrior Revenge reminder through Forever's supported spell-usability API.
+  The player-owned icon responds to the current-stance reactive condition, including a readable
+  insufficient-Rage state, and uses only NeverSecret cooldown classifications rather than secret
+  cooldown timing or combat-log reconstruction.
+- Added a reduced Warrior Overpower reminder to the same player-owned Class Buff bar. Forever can
+  report that Overpower is usable for the current stance and target, but deliberately does not
+  recreate Classic's per-enemy nameplate marker because the dodging enemy's identity is restricted.
+- Flattened the Class Features options around one authoritative family master. Removed the redundant
+  Class Text, Buff Reminders, and reduced Overpower section headings and the second reminder master;
+  shared visual controls now lead the tab, with Overpower directly above Revenge and Battle Shout.
+- Extended the same Forever class-reminder contract across the remaining classes. Rogue Riposte and
+  Hunter Mongoose Bite use the validated player spell-usability path; Hunter Counterattack now has a
+  reduced player-bar fallback instead of unusable Forever nameplate controls; and Shaman weapon
+  imbues use the modern per-slot item API with last-readable-state retention. Ordinary self-buffs
+  share the Battle Shout aura policy, while Clearcasting proc alerts remain readable-state-only.
 - Fixed the TurboFace Loot Frame rejecting local loot messages on Forever build 70009 when the
   client supplies the recipient in `CHAT_MSG_LOOT`'s primary player-name field rather than its
   secondary field.

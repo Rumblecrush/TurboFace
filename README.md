@@ -18,8 +18,8 @@ repeatable leveling close at hand.
 
 | Client | Status | Interface | Package |
 |---|---|---:|---|
-| WoW Classic Era | Stable | 11509 | `TurboFace-Classic-0.18.3.zip` |
-| WoW Forever | Supported beta client | 16001 | `TurboFace-Forever-0.18.3.zip` |
+| WoW Classic Era | Stable | 11509 | `TurboFace-Classic-0.18.7.zip` |
+| WoW Forever | Supported beta client | 16001 | `TurboFace-Forever-0.18.7.zip` |
 
 Use only the package matching your client. GitHub Releases provides both ZIPs
 for direct installation. CurseForge availability can follow its normal file
@@ -141,6 +141,7 @@ sections above:
 
 - [Contributing](CONTRIBUTING.md)
 - [Development guide](docs/DEVELOPMENT.md)
+- [Development-to-CurseForge workflow](docs/DEV_TO_CURSEFORGE.md)
 - [Release guide](docs/RELEASING.md)
 - [Multi-client strategy](docs/MULTICLIENT_STRATEGY.md)
 - [Source map](docs/SOURCE_MAP.md)

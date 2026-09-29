@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-09-27
-**Current addon version:** 0.18.3
+**Last updated:** 2026-09-29
+**Current addon version:** 0.18.7
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -248,7 +248,7 @@ presets are differential overlays on current factory defaults: Factory Defaults 
 the live schema marker directly, while dated user presets declare the exact schema their
 serialized data represents so profile application never replays irrelevant historical
 migrations. The current built-in release set is intentionally minimal: **Factory Defaults** and
-**Rumblecrush's Preset - 2026-09-13**.
+**Rumblecrush's Preset - 2026-09-29**.
 
 Aura presentation is a shared-default invariant rather than a Rumblecrush-only override.
 `Core/Defaults.lua` owns the audited Rumblecrush Aura Styling baseline, and built-in differential

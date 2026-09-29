@@ -32,10 +32,14 @@ local SK = {}
 ns.Skills = SK
 
 local CreateFrame        = CreateFrame
-local GetNumSkillLines   = GetNumSkillLines
-local GetSkillLineInfo   = GetSkillLineInfo
-local ExpandSkillHeader  = ExpandSkillHeader
-local CollapseSkillHeader = CollapseSkillHeader
+local GetNumSkillLines   = ns.API.GetNumSkillLines
+local GetSkillLineInfo   = ns.API.GetSkillLineInfo
+local ExpandSkillHeader  = ns.API.ExpandSkillHeader
+local CollapseSkillHeader = ns.API.CollapseSkillHeader
+local GetNumTalentTabs   = ns.API.GetNumTalentTabs
+local GetTalentTabInfo   = ns.API.GetTalentTabInfo
+local GetNumSpellTabs    = ns.API.GetNumSpellTabs
+local GetSpellTabInfo    = ns.API.GetSpellTabInfo
 local UnitLevel          = UnitLevel
 local GetInventoryItemLink = GetInventoryItemLink
 local GetItemInfoInstant = ns.API.GetItemInfoInstant
@@ -104,6 +108,13 @@ end
 -- Scanning
 -- -----------------------------------------------------------------------------
 
+local function SkillLineCount()
+    if type(GetNumSkillLines) ~= "function" then return 0 end
+    local ok, count = pcall(GetNumSkillLines)
+    if not ok then return 0 end
+    return math.max(0, tonumber(count) or 0)
+end
+
 -- Records which headers are collapsed, expands everything, and returns the list
 -- of collapsed header names so Restore can put them back. Returns nil when
 -- nothing needed expanding, which is the common case and costs one pass.
@@ -111,7 +122,7 @@ local function ExpandAllHeaders()
     if not GetNumSkillLines or not GetSkillLineInfo or not ExpandSkillHeader then return nil end
 
     local collapsed
-    for i = 1, GetNumSkillLines() do
+    for i = 1, SkillLineCount() do
         local name, isHeader, isExpanded = GetSkillLineInfo(i)
         if isHeader and not isExpanded and name then
             collapsed = collapsed or {}
@@ -132,7 +143,7 @@ local function RestoreHeaders(collapsed)
     local wanted = {}
     for i = 1, #collapsed do wanted[collapsed[i]] = true end
 
-    for i = GetNumSkillLines(), 1, -1 do
+    for i = SkillLineCount(), 1, -1 do
         local name, isHeader = GetSkillLineInfo(i)
         if isHeader and name and wanted[name] then
             CollapseSkillHeader(i)
@@ -175,39 +186,36 @@ end
 -- 5 x level, so the weapon-skill test alone cannot tell them apart -- a level 18
 -- druid saw three spurious 90/90 rows.
 --
--- The class skill lines are exactly the talent tab names, and GetTalentTabInfo
--- returns those localized by the client. That gives a locale-proof identifier
--- with no name list to maintain.
+-- The class skill lines correspond to the localized talent tabs on Era and to
+-- the localized player-spellbook skill lines on Forever. Collect both sources:
+-- this stays locale-proof without relying on removed modern talent APIs.
 --
 -- Used two ways: to skip those lines directly, and to mark the header they sit
 -- under so any other class skill beneath it (a rogue's Lockpicking, say) is
 -- excluded as well rather than being mistaken for a weapon skill.
 local function GetTalentTabNames()
     local names = {}
-    if not GetNumTalentTabs or not GetTalentTabInfo then return names end
-    local ok, count = pcall(GetNumTalentTabs)
-    if not ok or not count then return names end
-
-    for i = 1, count do
-        -- Return order is not the same across clients: Classic Era returns the
-        -- tab ID first and the name second (a druid reports 283/281/282, not
-        -- Balance/Feral Combat/Restoration), while other builds put the name
-        -- first. Comparing against the ID silently matched nothing, which is why
-        -- three 90/90 class rows kept appearing.
-        --
-        -- So take the first return that is a genuine, non-numeric string rather
-        -- than trusting either position.
-        local okInfo, a, b = pcall(GetTalentTabInfo, i)
-        if okInfo then
-            local candidate
-            if type(b) == "string" and b ~= "" and not tonumber(b) then
-                candidate = b
-            elseif type(a) == "string" and a ~= "" and not tonumber(a) then
-                candidate = a
+    local function AddNames(countFn, infoFn)
+        if type(countFn) ~= "function" or type(infoFn) ~= "function" then return end
+        local ok, count = pcall(countFn)
+        count = ok and tonumber(count) or 0
+        for i = 1, count do
+            -- Return order differs between clients. Take the first genuine,
+            -- non-numeric string rather than trusting either leading slot.
+            local okInfo, a, b = pcall(infoFn, i)
+            if okInfo then
+                local candidate
+                if type(b) == "string" and b ~= "" and not tonumber(b) then
+                    candidate = b
+                elseif type(a) == "string" and a ~= "" and not tonumber(a) then
+                    candidate = a
+                end
+                if candidate then names[candidate] = true end
             end
-            if candidate then names[candidate] = true end
         end
     end
+    AddNames(GetNumTalentTabs, GetTalentTabInfo)
+    AddNames(GetNumSpellTabs, GetSpellTabInfo)
     return names
 end
 
@@ -225,7 +233,7 @@ function SK:Scan()
     -- header holding a talent-tab name can disqualify all of its children.
     local lines, headerOf = {}, {}
     local currentHeader, classHeaders = nil, {}
-    for i = 1, GetNumSkillLines() do
+    for i = 1, SkillLineCount() do
         local name, isHeader, _, rank, _, modifier, maxRank = GetSkillLineInfo(i)
         if isHeader then
             currentHeader = name
@@ -243,6 +251,12 @@ function SK:Scan()
 
     RestoreHeaders(collapsed)
 
+    -- Modern C_SkillInfo can expose the same profession through more than one
+    -- visible skill-line row. The legacy API normally exposed one, so collapse
+    -- duplicates by ProfessionData's locale-safe canonical key (and exact
+    -- normalized name for non-profession rows). Keep the strongest row when
+    -- their snapshots differ.
+    local entriesByIdentity = {}
     for index = 1, #lines do
         local line = lines[index]
         local header = headerOf[index]
@@ -251,7 +265,7 @@ function SK:Scan()
         if not excluded then
             local category, key = Categorize(line.name, line.maxRank)
             if category then
-                local entry = {
+                local candidate = {
                     name = line.name,
                     key = key,
                     rank = line.rank,
@@ -260,7 +274,22 @@ function SK:Scan()
                     category = category,
                     icon = IconFor(category, key, line.name),
                 }
-                out[category][#out[category] + 1] = entry
+                local identity = category .. ":" .. (key or line.name:lower())
+                local entry = entriesByIdentity[identity]
+                if not entry then
+                    entry = candidate
+                    entriesByIdentity[identity] = entry
+                    out[category][#out[category] + 1] = entry
+                elseif candidate.maxRank > entry.maxRank
+                    or (candidate.maxRank == entry.maxRank and candidate.rank > entry.rank) then
+                    entry.name = candidate.name
+                    entry.key = candidate.key
+                    entry.rank = candidate.rank
+                    entry.maxRank = candidate.maxRank
+                    entry.modifier = candidate.modifier
+                    entry.category = candidate.category
+                    entry.icon = candidate.icon
+                end
                 out.byName[line.name] = entry
                 if key then out.byKey[key] = entry end
             end

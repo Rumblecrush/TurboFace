@@ -1870,16 +1870,35 @@ local function ButtonFallbackPoint()
     return { "CENTER", UIParent, "CENTER", 0, -180 }
 end
 
+local function GroceryButtonSize()
+    local size = tonumber(ns.Opt("groceryButtonSize", 32)) or 32
+    if size < 16 then return 16 end
+    if size > 64 then return 64 end
+    return size
+end
+
+local function ApplyGroceryButtonSize()
+    if not launcher then return end
+    local size = GroceryButtonSize()
+    launcher:SetSize(size, size)
+    if launcher.border then
+        launcher.border:SetSize(size * (58 / 32), size * (58 / 32))
+        launcher.border:ClearAllPoints()
+        launcher.border:SetPoint("CENTER", launcher, "CENTER", 0, -(size / 32))
+    end
+end
+
 function G:GetFrame() return launcher end
 function G:GetChildren() return launcher and { launcher } or {} end
 
 function G:RegisterMover()
     if not launcher or not ns.Movers or not ns.Movers.RegisterElement then return end
     local fallback = ButtonFallbackPoint()
+    local size = GroceryButtonSize()
     ns.Movers:RegisterElement("GroceryButton", launcher, {
         label = "Grocery Button",
-        overlayWidth = 32,
-        overlayHeight = 32,
+        overlayWidth = size,
+        overlayHeight = size,
         fallbackPoint = fallback,
         defaultPoint = fallback,
         getChildren = function() return G:GetChildren() end,
@@ -1961,6 +1980,7 @@ local function EnsureButton()
         end
     end)
 
+    ApplyGroceryButtonSize()
     return b
 end
 
@@ -2051,6 +2071,7 @@ function G:Init()
 
     if ButtonEnabled() then
         EnsureButton()
+        ApplyGroceryButtonSize()
         self:RegisterMover()
         launcher:Show()
         self:UpdateButton()
@@ -2078,6 +2099,7 @@ function G:Refresh()
 
     if ButtonEnabled() then
         EnsureButton()
+        ApplyGroceryButtonSize()
         self:RegisterMover()
         launcher:Show()
         self:UpdateButton()

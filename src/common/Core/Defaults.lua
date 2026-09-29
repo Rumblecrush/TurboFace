@@ -342,7 +342,7 @@ ns.defaults = {
         buffFilterMode       = "ONLY_DISPELLABLE",
         maxBuffs             = 4,
         buffIconWidth        = 26,
-        buffIconHeight       = 18,
+        buffIconHeight       = 26,
         buffFontSize         = 11,
         buffStackFontSize    = 10,
         buffXOffset          = 0,
@@ -553,6 +553,7 @@ ns.defaults = {
             FPSCounter        = { enabled = true, hidden = false, clickThrough = true },
             BagSlots          = { enabled = true, hidden = false, clickThrough = true },
             GameTooltip       = { enabled = false, hidden = false, clickThrough = false },
+            AlertToasts       = { enabled = true, hidden = false, clickThrough = false },
             LootFrame         = {
                 enabled = true, hidden = false, clickThrough = false,
                 point = "CENTER", relativePoint = "CENTER", x = 0, y = 290,
@@ -663,6 +664,10 @@ ns.defaults = {
         minimapZoneBanner    = false,
         minimapSize          = 140,    -- square minimap size (140 = 100%)
         minimapBorderWidth   = 3,
+        -- Forever Edit Mode clamps the oversized MinimapCluster bounds rather
+        -- than the visible round art. Let the cluster cross the screen edge so
+        -- the artwork itself can be placed flush with it.
+        unclampMinimap       = false,
         -- World map (MapTweaks.lua; reload-applied except the zoom ceiling).
         -- mapMovable only calls SetMovable(true); Blizzard still owns the drag,
         -- the title dropdown's lock state and the saved position.
@@ -868,6 +873,7 @@ ns.defaults = {
     groceryEnabled     = false,    -- master enable for the grocery system
     groceryAutoBuy     = true,     -- buy queued items when a merchant opens
     groceryShowButton  = true,     -- floating launcher button (needs Movers)
+    groceryButtonSize  = 32,       -- floating launcher icon size in UI pixels
     groceryChatSummary = true,     -- announce successful purchases in chat
     groceryShowQueue   = true,     -- shopping-list popout attached to the window
     groceryQueueSeen   = false,    -- has the popout auto-opened once already

@@ -9,7 +9,8 @@ local _, ns = ...
 --     (mark junk / protect as useful) live in TurboFaceCharDB.discardPile.
 --   * One keybind cycles the hovered item through Junk, Useful, and Bank.
 --     Bank.lua owns deposit/withdraw behavior; this file owns state and icons.
---   * Coin/banker overlay icons on marked items in Blizzard bags/bank.
+--   * Coin/banker overlay icons on marked items in Blizzard bags/bank; junk
+--     item art is desaturated to match Blizzard's unavailable/selling state.
 --   * Auto-sell all junk when a merchant window opens (optional).
 --   * GetNetWorth() = money + vendor value of bag junk (used by NetWorth.lua).
 --   * DeleteCheapest(): destroys the single lowest-value junk item.
@@ -51,6 +52,7 @@ local IsAltKeyDown         = IsAltKeyDown
 local GetTime              = GetTime
 local CreateFrame          = CreateFrame
 local hooksecurefunc       = hooksecurefunc
+local SetItemButtonDesaturated = SetItemButtonDesaturated
 local select, type         = select, type
 
 local NUM_BAGS = _G.NUM_BAG_SLOTS or 4            -- backpack (0) + bags 1..NUM_BAGS
@@ -864,6 +866,32 @@ end
 -- ---------------------------------------------------------------------------
 -- Junk icon overlay on the default Blizzard bag buttons
 -- ---------------------------------------------------------------------------
+local function SetJunkIconDimmed(button, dimmed)
+    if not button then return end
+
+    -- Only undo a desaturation TurboFace previously applied. Bag buttons are
+    -- pooled, and Blizzard can independently desaturate a locked item while a
+    -- sale is in flight; blindly forcing every non-junk button bright would
+    -- fight that native state.
+    if dimmed then
+        if type(SetItemButtonDesaturated) == "function" then
+            SetItemButtonDesaturated(button, true)
+        else
+            local icon = button.Icon or button.icon or button.IconTexture
+            if icon and icon.SetDesaturated then icon:SetDesaturated(true) end
+        end
+        button._tfJunkDimmed = true
+    elseif button._tfJunkDimmed then
+        if type(SetItemButtonDesaturated) == "function" then
+            SetItemButtonDesaturated(button, false)
+        else
+            local icon = button.Icon or button.icon or button.IconTexture
+            if icon and icon.SetDesaturated then icon:SetDesaturated(false) end
+        end
+        button._tfJunkDimmed = nil
+    end
+end
+
 local function StyleButton(button, bag, slot)
     local id, _, quality = SlotInfo(bag, slot)
     local enabled = ns.Opt("invEnabled", true) and ns.Opt("invShowJunkIcon", true)
@@ -894,6 +922,8 @@ local function StyleButton(button, bag, slot)
     elseif button.TFBankIcon then
         button.TFBankIcon:Hide()
     end
+
+    SetJunkIconDimmed(button, showJunk == true)
 end
 
 INV.StyleButton = StyleButton
@@ -902,6 +932,7 @@ local function ClearTurboFaceItemOverlays(button)
     if not button then return end
     if button.TFJunkIcon then button.TFJunkIcon:Hide() end
     if button.TFBankIcon then button.TFBankIcon:Hide() end
+    SetJunkIconDimmed(button, false)
 end
 
 local function StyleContainerItemButton(button)

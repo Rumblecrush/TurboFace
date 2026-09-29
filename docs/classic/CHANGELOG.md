@@ -1,5 +1,9 @@
 # TurboFace Classic Changelog
 
+## 0.18.7 — Rumblecrush preset refresh
+
+- Rebuilt **Rumblecrush's Preset** from the supplied 2026-09-29 schema-79 export while retaining its sparse, factory-default-relative representation. The refresh includes the latest mover layout, Grocery button size, target aura arrangement, minimap preferences, and module gates.
+
 ## 0.18.3 — aura, trainer, automation, and combat reliability
 
 - Fixed TurboFace Loot Frame ownership detection across client variants that identify the local

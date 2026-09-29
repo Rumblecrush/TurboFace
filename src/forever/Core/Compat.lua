@@ -143,6 +143,15 @@ API.GetSpellPowerCost = pick(GetSpellPowerCost, C_Spell and C_Spell.GetSpellPowe
     return C_Spell.GetSpellPowerCost(spell)
 end)
 
+function API.IsSpellHarmful(spell)
+    local spells = _G.C_Spell
+    local fn = type(spells) == "table" and spells.IsSpellHarmful or _G.IsHarmfulSpell
+    if type(fn) ~= "function" then return nil end
+    local ok, harmful = pcall(fn, spell)
+    if not ok or not API.CanAccessValue(harmful) or type(harmful) ~= "boolean" then return nil end
+    return harmful
+end
+
 -- Retail/Forever moved the current-spell predicate into C_Spell.  Swing timer
 -- attack-state and on-next-swing queue detection must never call the removed
 -- global directly because those paths run from the cadence driver.
@@ -150,6 +159,37 @@ if C_Spell and type(C_Spell.IsCurrentSpell) == "function" then
     API.IsCurrentSpell = C_Spell.IsCurrentSpell
 else
     API.IsCurrentSpell = pick(_G.IsCurrentSpell)
+end
+
+-- C_Spell.IsSpellUsable is the supported Forever replacement for the removed
+-- IsUsableSpell global. Its booleans are ordinary player-owned usability
+-- signals, but still pass them through the secret-value boundary so a future
+-- client restriction fails closed instead of reaching shared class logic.
+function API.IsSpellUsable(spell)
+    local spells = _G.C_Spell
+    local fn = type(spells) == "table" and spells.IsSpellUsable or _G.IsUsableSpell
+    if type(fn) ~= "function" then return nil end
+    local ok, usable, insufficientPower = pcall(fn, spell)
+    if not ok or not API.CanAccessValue(usable) or not API.CanAccessValue(insufficientPower) then
+        return nil
+    end
+    return usable, insufficientPower
+end
+
+-- Midnight keeps the boolean cooldown classification readable even when the
+-- timing scalars are secret. Use only those Blizzard-declared boolean fields;
+-- never inspect startTime or duration. isOnGCD is required so an ordinary GCD
+-- does not suppress a reactive window.
+function API.IsSpellOnCooldown(spell)
+    local spells = _G.C_Spell
+    local fn = type(spells) == "table" and spells.GetSpellCooldown
+    if type(fn) ~= "function" then return false end
+    local ok, info = pcall(fn, spell)
+    if not ok or type(info) ~= "table" then return false end
+    local active, onGCD = info.isActive, info.isOnGCD
+    if not API.CanAccessValue(active) or not API.CanAccessValue(onGCD) then return false end
+    if type(active) ~= "boolean" or type(onGCD) ~= "boolean" then return false end
+    return active == true and onGCD == false
 end
 
 local modernIsSpellKnown = C_SpellBook and C_SpellBook.IsSpellKnown and function(spellID)
@@ -385,6 +425,11 @@ function API.ReadUnitIsDead(unit) return ReadableScalarCall(UnitIsDead, unit) en
 function API.ReadUnitGUID(unit) return ReadableScalarCall(UnitGUID, unit) end
 function API.ReadUnitName(unit) return ReadableScalarCall(UnitName, unit) end
 function API.ReadUnitCreatureFamily(unit) return ReadableScalarCall(UnitCreatureFamily, unit) end
+function API.ReadUnitLevel(unit) return ReadableNumberCall(UnitLevel, unit) end
+function API.ReadUnitClassification(unit) return ReadableScalarCall(UnitClassification, unit) end
+function API.ReadUnitAffectingCombat(unit) return ReadableScalarCall(UnitAffectingCombat, unit) end
+function API.ReadRaidTargetIndex(unit) return ReadableNumberCall(GetRaidTargetIndex, unit) end
+function API.ReadUnitSpeed(unit) return ReadableNumberCall(GetUnitSpeed, unit) end
 
 function API.ReadUnitClass(unit)
     if type(UnitClass) ~= "function" then return nil end
@@ -840,6 +885,36 @@ API.GetSpellBookItemName = pick(GetSpellBookItemName, C_SpellBook and C_SpellBoo
 end)
 
 -- =============================================================================
+-- SKILL LINES  (Forever moved the legacy globals to C_SkillInfo)
+-- =============================================================================
+
+local ModernSkillInfo = _G.C_SkillInfo
+
+API.GetNumSkillLines = pick(_G.GetNumSkillLines,
+    type(ModernSkillInfo) == "table" and type(ModernSkillInfo.GetNumSkillLines) == "function" and function()
+        local ok, count = pcall(ModernSkillInfo.GetNumSkillLines)
+        if not ok or not API.IsReadableNumber(count) then return nil end
+        return count
+    end)
+
+API.GetSkillLineInfo = pick(_G.GetSkillLineInfo,
+    type(ModernSkillInfo) == "table" and type(ModernSkillInfo.GetSkillLineInfo) == "function" and function(index)
+        local ok, info = pcall(ModernSkillInfo.GetSkillLineInfo, index)
+        if not ok or type(info) ~= "table" or not API.CanAccessValue(info) then return nil end
+        -- Normalize SkillLineAttributes to the legacy tuple consumed by the
+        -- shared scanner: name, header, expanded, rank, temp, modifier, cap.
+        return info.name, info.isHeader, not info.isCollapsed, info.rank,
+               info.tempPoints, info.modifier, info.maxRank, info.isAbandonable,
+               info.stepCost, info.rankCost, info.minLevel, info.costType,
+               info.description
+    end)
+
+API.ExpandSkillHeader = pick(_G.ExpandSkillHeader,
+    type(ModernSkillInfo) == "table" and ModernSkillInfo.ExpandSkillHeader)
+API.CollapseSkillHeader = pick(_G.CollapseSkillHeader,
+    type(ModernSkillInfo) == "table" and ModernSkillInfo.CollapseSkillHeader)
+
+-- =============================================================================
 -- COMBO POINTS  (retail reads them as a power type)
 -- =============================================================================
 
@@ -993,7 +1068,71 @@ end
 
 API.GetMacroSpell = pick(GetMacroSpell)
 API.GetMacroBody = pick(GetMacroBody)
-API.GetWeaponEnchantInfo = pick(GetWeaponEnchantInfo)
+
+-- Forever 1.60.1 moved temporary enchant inspection to a per-slot C_Item API.
+-- It is permitted only on an untainted/readable path, so expose an explicit
+-- readability bit. Consumers can preserve their last readable state instead
+-- of turning a failed restricted call into "no enchant".
+local function ReadModernWeaponEnchantSlot(slot)
+    local items = _G.C_Item
+    local fn = type(items) == "table" and items.GetWeaponEnchantInfo
+    if type(fn) ~= "function" then return false end
+    local ok, rows = pcall(fn, slot)
+    if not ok or type(rows) ~= "table" or not API.CanAccessValue(rows) then return false end
+
+    for _, row in ipairs(rows) do
+        if type(row) == "table" and API.CanAccessValue(row) then
+            local hasEnchant, enchantType = row.hasEnchant, row.enchantType
+            if API.CanAccessValue(hasEnchant) and API.CanAccessValue(enchantType)
+                and hasEnchant == true and (enchantType == 2 or enchantType == 3) then
+                local timeLeft, charges, enchantID = row.timeLeft, row.charges, row.enchantID
+                if API.CanAccessValue(timeLeft) and API.CanAccessValue(charges)
+                    and API.CanAccessValue(enchantID) then
+                    return true, true, timeLeft, charges, enchantID
+                end
+                return false
+            end
+        end
+    end
+    return true, false, nil, nil, nil
+end
+
+local function WeaponEnchantValuesAccessible(...)
+    for index = 1, select("#", ...) do
+        if not API.CanAccessValue(select(index, ...)) then return false end
+    end
+    return true
+end
+
+function API.ReadWeaponEnchantInfo()
+    local items = _G.C_Item
+    if type(items) == "table" and type(items.GetWeaponEnchantInfo) == "function" then
+        local mhReadable, hasMH, mhExpiration, mhCharges, mhEnchantID =
+            ReadModernWeaponEnchantSlot(0)
+        local ohReadable, hasOH, ohExpiration, ohCharges, ohEnchantID =
+            ReadModernWeaponEnchantSlot(1)
+        if not mhReadable or not ohReadable then return false end
+        return true, hasMH, mhExpiration, mhCharges, mhEnchantID,
+            hasOH, ohExpiration, ohCharges, ohEnchantID
+    end
+
+    if type(_G.GetWeaponEnchantInfo) ~= "function" then return false end
+    local ok, hasMH, mhExpiration, mhCharges, mhEnchantID,
+        hasOH, ohExpiration, ohCharges, ohEnchantID = pcall(_G.GetWeaponEnchantInfo)
+    if not ok then return false end
+    if not WeaponEnchantValuesAccessible(hasMH, mhExpiration, mhCharges, mhEnchantID,
+        hasOH, ohExpiration, ohCharges, ohEnchantID) then return false end
+    return true, hasMH, mhExpiration, mhCharges, mhEnchantID,
+        hasOH, ohExpiration, ohCharges, ohEnchantID
+end
+
+function API.GetWeaponEnchantInfo()
+    local readable, hasMH, mhExpiration, mhCharges, mhEnchantID,
+        hasOH, ohExpiration, ohCharges, ohEnchantID = API.ReadWeaponEnchantInfo()
+    if not readable then return nil end
+    return hasMH, mhExpiration, mhCharges, mhEnchantID,
+        hasOH, ohExpiration, ohCharges, ohEnchantID
+end
 
 -- =============================================================================
 -- MINIMAP / TRACKING

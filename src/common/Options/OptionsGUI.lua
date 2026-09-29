@@ -543,7 +543,7 @@ local function UpdateSectionLayout(c)
                 sec.content:Hide()
             else
                 sec.frame:Show()
-                local gateOn = GateEnabled(sec.gateFamily, sec.gateElement)
+                local gateOn = sec.available ~= false and GateEnabled(sec.gateFamily, sec.gateElement)
                 local collapsed = sectionCollapsed[sec.key] or (not gateOn)
                 local h = collapsed and SECTION_HEADER_H or (sec.fullH or SECTION_HEADER_H)
                 sec.frame:SetHeight(h)
@@ -680,11 +680,11 @@ local function StyleOptionsOutline(fontString, size)
     ns:StyleFont(fontString, path, size, nil, "OUTLINE")
 end
 
--- Header(parent, y, text[, gateFamily, gateElement, gateApplyFn, tooltipText])
+-- Header(parent, y, text[, gateFamily, gateElement, gateApplyFn, tooltipText, available])
 -- Passing a gate renders a checkbox in the header row; the section's rows stay
 -- hidden and un-expandable while it is unchecked. tooltipText moves compact
 -- feature guidance onto the category header without consuming panel height.
-local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, tooltipText)
+local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, tooltipText, available)
     local c = parent
     if not c._tfSections then
         -- Legacy render (parent not section-enabled)
@@ -710,6 +710,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
         startY = y,
         gateFamily = gateFamily,
         gateElement = gateElement,
+        available = available ~= false,
     }
 
     sec.frame = CreateFrame("Frame", nil, c)
@@ -743,6 +744,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
         gate:SetPoint("TOPLEFT", hdr, "TOPLEFT", -2, -2)
         gate:SetChecked(GateEnabled(gateFamily, gateElement))
         gate:SetScript("OnClick", function(self)
+            if sec.available == false then return end
             if DevelopmentRestrictionActive(GateDevelopmentRestriction(gateFamily)) then return end
             ns:PlayCheckSound(self)
             local on = self:GetChecked() == true or self:GetChecked() == 1
@@ -756,6 +758,11 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
         sec.gateCheck = gate
         gateControl = gate
         textX = 34
+        if sec.available == false then
+            gate:SetChecked(false)
+            gate:Disable()
+            gate:SetAlpha(0.4)
+        end
     end
 
     local toggle = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -779,7 +786,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
     end
 
     hdr:SetScript("OnEnter", function(self)
-        if GateEnabled(sec.gateFamily, sec.gateElement) then lbl:SetTextColor(1, 1, 1) end
+        if sec.available ~= false and GateEnabled(sec.gateFamily, sec.gateElement) then lbl:SetTextColor(1, 1, 1) end
         if tooltipText and tooltipText ~= "" and GameTooltip then
             -- Anchor where the pointer enters the category instead of at the
             -- panel edge. A wrapped AddLine respects the tooltip width cap and
@@ -792,7 +799,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
         end
     end)
     hdr:SetScript("OnLeave", function(self)
-        if GateEnabled(sec.gateFamily, sec.gateElement) then
+        if sec.available ~= false and GateEnabled(sec.gateFamily, sec.gateElement) then
             lbl:SetTextColor(TAB_R, TAB_G, TAB_B)
         else
             lbl:SetTextColor(0.45, 0.45, 0.45)
@@ -804,7 +811,7 @@ local function Header(parent, y, text, gateFamily, gateElement, gateApplyFn, too
     hdr:SetScript("OnClick", function()
         -- A gated-off section has nothing to show; ignore collapse clicks so the
         -- header cannot be expanded into an empty box.
-        if not GateEnabled(sec.gateFamily, sec.gateElement) then return end
+        if sec.available == false or not GateEnabled(sec.gateFamily, sec.gateElement) then return end
         -- Sound goes AFTER the gate check: a click that is deliberately ignored
         -- should stay silent rather than imply something happened.
         ns:PlayUISound("tab")
@@ -3174,6 +3181,9 @@ local function BuildMoversTab(c)
     if ClientFeatureAvailable("movers.questTracker", true) then
         table.insert(blizzardMovers, 2, { "Quest Tracker", "QuestTracker" })
     end
+    if ClientFeatureAvailable("movers.alertToasts", false) then
+        table.insert(blizzardMovers, 2, { "Recipe / Alert Toasts", "AlertToasts" })
+    end
     y = ElementRows(c, y, blizzardMovers)
     y = y - 6
 
@@ -3185,7 +3195,6 @@ local function BuildMoversTab(c)
         { "Player Cast Bar", "PlayerCastBar" },
         { "Target Swing Timer", "TargetSwingTimer" },
         { "Target Cast Bar", "TargetCastBar" },
-        { "Leash Timer", "LeashTimer" },
         { "Speedrun Splits", "SpeedrunSplits" },
         { "Luxthos-like XP", "ExperienceBar" },
         { "FPS Counter", "FPSCounter" },
@@ -3200,6 +3209,9 @@ local function BuildMoversTab(c)
         { "Grocery Button", "GroceryButton" },
         { "Free Bag Slots", "BagSlots" },
     }
+    if ClientFeatureAvailable("combat.leashTimer", true) then
+        table.insert(turboFaceMovers, 7, { "Leash Timer", "LeashTimer" })
+    end
     if ClientFeatureAvailable("hud.spendTalentPoint", false) then
         table.insert(turboFaceMovers, 11, { "Spend Talent Point", "SpendTalentPoint" })
     end
@@ -3219,12 +3231,18 @@ local function BuildClassTab(c)
     c._tfApply = RefreshClassOptions
     local y = -6
     local _, playerClass = UnitClass("player")
+    local nameplateReactiveIndicator =
+        type(ns.CombatProviderSupportsReactiveNameplateIndicator) ~= "function"
+        or ns.CombatProviderSupportsReactiveNameplateIndicator() == true
 
     y = MasterToggle(c, y, "TurboFace Class Features", "class")
 
-    y = Header(c, y, "Class Text")
     y = Dropdown(c, y, 0, W, "Font", "classFont", FontOptions(), RefreshClassOptions)
     y = Dropdown(c, y, 0, W, "Text Style", "classTextStyle", STYLE_OPTS, RefreshClassOptions)
+    y = Slider(c, y, 0, W, "Icon Size", "classBuffIconSize", 20, 80, 1, false)
+    y = Slider(c, y, 0, W, "Spacing",   "classBuffSpacing",  0,  24, 1, false)
+    y = Slider(c, y, 0, W, "Warn Before Expiry (sec)", "classBuffWarnSeconds", 0, 60, 1, false)
+    y = y - 4
 
     local function Button(parent, py, x, w, label, fn)
         parent, py = SectionParent(parent, py)
@@ -3239,23 +3257,20 @@ local function BuildClassTab(c)
     -- ------------------------------------------------------------------
     -- Missing-buff reminders
     -- ------------------------------------------------------------------
-    y = Header(c, y, "Buff Reminders")
-
     -- Every Classic class has at least one class-owned reminder catalog entry.
     -- The unspent talent-point reminder is now a separate Speedrun text HUD.
     local hasReminders = true
     if hasReminders then
-        y = Checkbox(c, y, 0, "Enable missing-buff reminders", "classBuffEnabled")
-        y = Checkbox(c, y, 0, "Only show while in combat", "classBuffOnlyInCombat")
-        y = y - 4
-
         if playerClass == "WARRIOR" then
+            if not nameplateReactiveIndicator then
+                y = Checkbox(c, y, 0, "Show Overpower Window", "warriorOverpowerIndicator")
+            end
             y = Checkbox(c, y, 0, "Show Revenge Window", "classBuffRevenge")
             y = Checkbox(c, y, 0, "Track Battle Shout", "classBuffBattleShout")
         elseif playerClass == "SHAMAN" then
             y = Checkbox(c, y, 0, "Track Lightning Shield",        "classBuffLightningShield")
-            y = Checkbox(c, y, 0, "Track Weapon Imbue (main hand)", "classBuffWeaponMH")
-            y = Checkbox(c, y, 0, "Show Clearcasting Proc (Elemental Focus)", "classBuffClearcasting")
+            y = Checkbox(c, y, 0, "Track Weapon Imbue (last known in combat)", "classBuffWeaponMH")
+            y = Checkbox(c, y, 0, "Show Clearcasting Proc (when readable)", "classBuffClearcasting")
         elseif playerClass == "DRUID" then
             y = Checkbox(c, y, 0, "Track Mark of the Wild", "classBuffMarkOfTheWild")
             y = Checkbox(c, y, 0, "Track Thorns",           "classBuffThorns")
@@ -3279,6 +3294,9 @@ local function BuildClassTab(c)
         elseif playerClass == "ROGUE" then
             y = Checkbox(c, y, 0, "Show Riposte Window", "classBuffRiposte")
         elseif playerClass == "HUNTER" then
+            if not nameplateReactiveIndicator then
+                y = Checkbox(c, y, 0, "Show Counterattack Window", "hunterCounterattackIndicator")
+            end
             y = Checkbox(c, y, 0, "Show Mongoose Bite Window", "classBuffMongooseBite")
             y = Checkbox(c, y, 0, "Remind to Feed Pet", "classBuffFeedPet")
             y = Checkbox(c, y, 0, "Track Aspects (any Aspect satisfies)", "classBuffAspect")
@@ -3290,18 +3308,16 @@ local function BuildClassTab(c)
             y = Checkbox(c, y, 0, "Track Fear Ward (dwarf)",     "classBuffFearWard")
             y = Checkbox(c, y, 0, "Track Shadow Protection",     "classBuffShadowProtection")
         elseif playerClass == "MAGE" then
-            y = Checkbox(c, y, 0, "Show Clearcasting Proc (Arcane Concentration)", "classBuffMageClearcasting")
+            y = Checkbox(c, y, 0, "Show Clearcasting Proc (when readable)", "classBuffMageClearcasting")
             y = Checkbox(c, y, 0, "Track Arcane Intellect",           "classBuffArcaneIntellect")
             y = Checkbox(c, y, 0, "Track Armor (Frost/Ice/Mage Armor)", "classBuffMageArmor")
         end
         if ClientFeatureAvailable("combat.classBuffTalentReminder", true) then
             y = Checkbox(c, y, 0, "Track Unspent Talent Points", "classBuffTalentPoints")
         end
+        y = Checkbox(c, y, 0, "Only show while in combat", "classBuffOnlyInCombat")
         y = y - 6
 
-        y = Slider(c, y, 0, W, "Icon Size", "classBuffIconSize", 20, 80, 1, false)
-        y = Slider(c, y, 0, W, "Spacing",   "classBuffSpacing",  0,  24, 1, false)
-        y = Slider(c, y, 0, W, "Warn Before Expiry (sec)", "classBuffWarnSeconds", 0, 60, 1, false)
         y = Dropdown(c, y, 0, W, "Growth Direction", "classBuffGrowth",
             {{name="Right",value="RIGHT"},{name="Left",value="LEFT"},{name="Up",value="UP"},{name="Down",value="DOWN"}})
         y = Checkbox(c, y, 0, "Pulse effect", "classBuffPulse")
@@ -3318,18 +3334,20 @@ local function BuildClassTab(c)
     -- Warrior: Overpower nameplate indicator (moved here from Nameplates)
     -- ------------------------------------------------------------------
     if playerClass == "WARRIOR" then
-        y = Header(c, y, "Overpower Indicator (nameplate)")
-        y = CheckboxRow(c, y, "Overpower Indicator", "warriorOverpowerIndicator", "", "")
-        y = Dropdown(c, y, 0, W, "Indicator Position", "warriorOverpowerPosition",
-            {{name="Left",value="LEFT"},{name="Right",value="RIGHT"},{name="Top",value="TOP"},{name="Bottom",value="BOTTOM"}})
-        y = Slider(c, y, 0, W, "Indicator Size",     "warriorOverpowerSize",     12, 48, 1, false)
-        y = Slider(c, y, 0, W, "Indicator Duration", "warriorOverpowerDuration", 1,  8,  0.5, false)
-        y = CheckboxRow(c, y, "Show Timer", "warriorOverpowerShowTimer", "Cooldown Swipe", "warriorOverpowerSwipe")
-        y = Slider(c, y, 0, W, "Indicator Margin",   "warriorOverpowerMargin",   0,  24, 1, false)
-        y = Slider(c, y, 0, W, "Indicator X Offset", "warriorOverpowerOffsetX",  -40, 40, 1, false)
-        y = Slider(c, y, 0, W, "Indicator Y Offset", "warriorOverpowerOffsetY",  -40, 40, 1, false)
+        if nameplateReactiveIndicator then
+            y = Header(c, y, "Overpower Indicator (nameplate)")
+            y = CheckboxRow(c, y, "Overpower Indicator", "warriorOverpowerIndicator", "", "")
+            y = Dropdown(c, y, 0, W, "Indicator Position", "warriorOverpowerPosition",
+                {{name="Left",value="LEFT"},{name="Right",value="RIGHT"},{name="Top",value="TOP"},{name="Bottom",value="BOTTOM"}})
+            y = Slider(c, y, 0, W, "Indicator Size",     "warriorOverpowerSize",     12, 48, 1, false)
+            y = Slider(c, y, 0, W, "Indicator Duration", "warriorOverpowerDuration", 1,  8,  0.5, false)
+            y = CheckboxRow(c, y, "Show Timer", "warriorOverpowerShowTimer", "Cooldown Swipe", "warriorOverpowerSwipe")
+            y = Slider(c, y, 0, W, "Indicator Margin",   "warriorOverpowerMargin",   0,  24, 1, false)
+            y = Slider(c, y, 0, W, "Indicator X Offset", "warriorOverpowerOffsetX",  -40, 40, 1, false)
+            y = Slider(c, y, 0, W, "Indicator Y Offset", "warriorOverpowerOffsetY",  -40, 40, 1, false)
+        end
         y = y - 6
-    elseif playerClass == "HUNTER" then
+    elseif playerClass == "HUNTER" and nameplateReactiveIndicator then
         y = Header(c, y, "Counterattack Indicator (nameplate)")
         y = CheckboxRow(c, y, "Counterattack Indicator", "hunterCounterattackIndicator", "", "")
         y = Dropdown(c, y, 0, W, "Indicator Position", "hunterCounterattackPosition",
@@ -3566,6 +3584,7 @@ local function BuildSpeedrunTab(c)
     y = Checkbox(c, y, 0, "Auto-buy queued items at vendors", "groceryAutoBuy")
     y = Checkbox(c, y, 0, "Announce purchases in chat", "groceryChatSummary")
     y = Checkbox(c, y, 0, "Show the floating grocery button", "groceryShowButton")
+    y = Slider(c, y, 0, W, "Grocery Button Icon Size", "groceryButtonSize", 16, 64, 1, false)
     y = y - 4
 
     Button(c, y, 0,   130, "Open Grocery List", function() if ns.Grocery then ns.Grocery:Show() end end)
@@ -3761,8 +3780,12 @@ local function BuildSpeedrunTab(c)
     -- Enemy leash timer
     -- ------------------------------------------------------------------
     c._tfApply = RefreshOwner("LeashTimer")
+    local leashTimerAvailable = ClientFeatureAvailable("combat.leashTimer", true)
+    local leashTooltip = leashTimerAvailable
+        and "Shows ESTIMATED per-enemy leash countdown. BETA feature."
+        or "Unavailable on Forever: the new API does not expose reliable per-enemy combat attribution."
     y = Header(c, y, "Enemy Leash Timer", { dbKey = "leashTimerEnabled" }, nil, c._tfApply,
-        "Shows ESTIMATED per-enemy leash countdown. BETA feature.")
+        leashTooltip, leashTimerAvailable)
 
     y = Dropdown(c, y, 0, W, "Font", "leashTimerFont", FontOptions())
     y = Dropdown(c, y, 0, W, "Text Style", "leashTimerTextStyle", STYLE_OPTS)
@@ -3922,6 +3945,10 @@ local function BuildPlusTab(c)
         ns.GetLSMBorders and ns.GetLSMBorders() or ns.Borders)
     y = Slider(c, y, 0, 300, "Minimap border width", P.."minimapBorderWidth", 1, 24, 1)
     y = Slider(c, y, 0, 300, "Minimap border offset", P.."minimapBorderOffset", -12, 12, 1)
+    if ClientFeatureAvailable("plus.minimapEdgePlacement", false) then
+        y = Checkbox(c, y, 0, "Allow minimap art to reach the screen edge", P.."unclampMinimap")
+        Note("Relaxes Blizzard Edit Mode's padded minimap boundary. Position and layout saving remain owned by Edit Mode.")
+    end
     y = Checkbox(c, y, 0, "Zone text banner above the minimap", P.."minimapZoneBanner")
     y = Slider(c, y, 0, 300, "Zone text size", P.."minimapZoneTextSize", 8, 28, 1)
     y = CheckboxRow(c, y, "Hide zoom buttons", P.."hideMiniZoomBtns", "Hide clock", P.."hideMiniClock")

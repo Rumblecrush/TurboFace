@@ -958,6 +958,7 @@ ns.PLUS_SECTION = {
     minimapShape = "minimap",
     minimapZoneBanner = "minimap",
     minimapZoneTextSize = "minimap",
+    unclampMinimap = "minimap",
     -- Map
     mapEnhancedZoom = "map",
     mapMovable = "map",
