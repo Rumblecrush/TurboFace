@@ -76,12 +76,29 @@ API.GetSpellPowerCost = pick(GetSpellPowerCost, C_Spell and C_Spell.GetSpellPowe
     return C_Spell.GetSpellPowerCost(spell)
 end)
 
+API.IsSpellHarmful = pick(IsHarmfulSpell, C_Spell and C_Spell.IsSpellHarmful and function(spell)
+    return C_Spell.IsSpellHarmful(spell)
+end)
+
 -- Shared combat/action consumers use the modernized name on every client.
 -- Classic Era still exposes the legacy global, so this is a zero-semantics
 -- alias rather than a client-specific implementation branch at each call site.
 API.IsCurrentSpell = pick(IsCurrentSpell, C_Spell and C_Spell.IsCurrentSpell and function(spell)
     return C_Spell.IsCurrentSpell(spell)
 end)
+
+-- Reactive class reminders ask whether an ability can currently be cast. Era
+-- still exposes the legacy predicate; keep the modern fallback so the shared
+-- consumer uses one spell-ID contract on every client.
+API.IsSpellUsable = pick(IsUsableSpell, C_Spell and C_Spell.IsSpellUsable and function(spell)
+    return C_Spell.IsSpellUsable(spell)
+end)
+
+function API.IsSpellOnCooldown(spell)
+    if type(GetSpellCooldown) ~= "function" then return false end
+    local start, duration = GetSpellCooldown(spell)
+    return start and start > 0 and duration and duration > 1.5 or false
+end
 
 API.IsSpellKnown = pick(IsSpellKnown)
 API.IsPlayerSpell = pick(IsPlayerSpell)
@@ -147,6 +164,11 @@ API.ReadUnitPowerMax = pick(UnitPowerMax)
 API.ReadUnitIsDead = pick(UnitIsDead)
 API.ReadUnitName = pick(UnitName)
 API.ReadUnitTotalAbsorbs = pick(UnitGetTotalAbsorbs)
+API.ReadUnitLevel = pick(UnitLevel)
+API.ReadUnitClassification = pick(UnitClassification)
+API.ReadUnitAffectingCombat = pick(UnitAffectingCombat)
+API.ReadRaidTargetIndex = pick(GetRaidTargetIndex)
+API.ReadUnitSpeed = pick(GetUnitSpeed)
 
 -- Classic Era has no secret-value domain.  Shared runtime modules still use
 -- the same accessibility vocabulary as Forever so the feature code can remain
@@ -530,6 +552,30 @@ API.GetSpellBookItemName = pick(GetSpellBookItemName, C_SpellBook and C_SpellBoo
 end)
 
 -- =============================================================================
+-- SKILL LINES  (modern fallback keeps the shared tracker client-neutral)
+-- =============================================================================
+
+API.GetNumSkillLines = pick(GetNumSkillLines,
+    C_SkillInfo and C_SkillInfo.GetNumSkillLines)
+
+API.GetSkillLineInfo = pick(GetSkillLineInfo,
+    C_SkillInfo and C_SkillInfo.GetSkillLineInfo and function(index)
+        local info = C_SkillInfo.GetSkillLineInfo(index)
+        if not info then return nil end
+        -- Normalize SkillLineAttributes to the legacy tuple consumed by the
+        -- shared scanner: name, header, expanded, rank, temp, modifier, cap.
+        return info.name, info.isHeader, not info.isCollapsed, info.rank,
+               info.tempPoints, info.modifier, info.maxRank, info.isAbandonable,
+               info.stepCost, info.rankCost, info.minLevel, info.costType,
+               info.description
+    end)
+
+API.ExpandSkillHeader = pick(ExpandSkillHeader,
+    C_SkillInfo and C_SkillInfo.ExpandSkillHeader)
+API.CollapseSkillHeader = pick(CollapseSkillHeader,
+    C_SkillInfo and C_SkillInfo.CollapseSkillHeader)
+
+-- =============================================================================
 -- COMBO POINTS  (retail reads them as a power type)
 -- =============================================================================
 
@@ -655,6 +701,10 @@ API.SetActionBarToggles = pick(SetActionBarToggles)
 API.GetMacroSpell = pick(GetMacroSpell)
 API.GetMacroBody = pick(GetMacroBody)
 API.GetWeaponEnchantInfo = pick(GetWeaponEnchantInfo)
+function API.ReadWeaponEnchantInfo()
+    if type(API.GetWeaponEnchantInfo) ~= "function" then return false end
+    return true, API.GetWeaponEnchantInfo()
+end
 -- Classic-only global (retail replaced it with C_Minimap.GetTrackingInfo,
 -- which has no single "current texture" equivalent). Stub returns nil, so the
 -- tracker module simply shows its inactive state if this ever goes away.

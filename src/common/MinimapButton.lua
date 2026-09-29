@@ -32,7 +32,7 @@ local math_rad    = math.rad
 local math_deg    = math.deg
 local math_cos    = math.cos
 local math_sin    = math.sin
-local atan2       = atan2   -- WoW global (Classic Lua 5.1); math.atan2 also exists
+local math_atan2  = math.atan2
 local tonumber    = tonumber
 
 -- Canonical TurboFace branding icon (Blizzard FileID).
@@ -65,7 +65,7 @@ local function OnDragUpdate()
     local scale  = Minimap:GetEffectiveScale()
     local px, py = GetCursorPosition()
     px, py = px / scale, py / scale
-    local angle = math_deg(atan2(py - my, px - mx)) % 360
+    local angle = math_deg(math_atan2(py - my, px - mx)) % 360
     ns.SetOpt("minimapButtonAngle", angle)
     UpdatePosition()
 end

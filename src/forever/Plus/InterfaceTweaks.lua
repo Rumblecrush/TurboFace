@@ -477,6 +477,45 @@ local SQUARE_MASK = "Interface\\ChatFrame\\ChatFrameBackground"
 local minimapBorderFrame
 local zoneBanner
 local toggleShowHooked = false
+local minimapClampHooked = false
+
+local function ApplyMinimapEdgePlacement()
+    local cluster = MinimapParts().cluster
+    if not cluster or type(cluster.SetClampedToScreen) ~= "function" then return end
+
+    if Settings().unclampMinimap then
+        -- Edit Mode moves MinimapCluster, whose bounds include transparent art
+        -- padding. Unclamping the child Minimap does not affect that drag. Keep
+        -- Blizzard's anchors and layout serialization, changing only the outer
+        -- system frame's screen constraint.
+        cluster:SetClampedToScreen(false)
+        if type(cluster.SetClampRectInsets) == "function" then
+            cluster:SetClampRectInsets(0, 0, 0, 0)
+        end
+    else
+        cluster:SetClampedToScreen(true)
+        -- Restore the selection-derived insets Blizzard normally owns.
+        if type(cluster.UpdateClampOffsets) == "function" then
+            cluster:UpdateClampOffsets()
+        end
+    end
+
+    -- EditModeSystemMixin:HighlightSystem() calls AnchorSelectionFrame(), which
+    -- recalculates padded clamp insets whenever Edit Mode opens. Reapply after
+    -- that specific lifecycle method rather than polling or replacing it.
+    if not minimapClampHooked and type(hooksecurefunc) == "function"
+        and type(cluster.AnchorSelectionFrame) == "function" then
+        local ok = pcall(hooksecurefunc, cluster, "AnchorSelectionFrame", function()
+            if Settings().unclampMinimap then
+                cluster:SetClampedToScreen(false)
+                if type(cluster.SetClampRectInsets) == "function" then
+                    cluster:SetClampRectInsets(0, 0, 0, 0)
+                end
+            end
+        end)
+        if ok then minimapClampHooked = true end
+    end
+end
 
 local function Place(frame, point, relative, relativePoint, x, y, scale)
     if not frame then return end
@@ -805,6 +844,7 @@ end
 
 local function ApplyMinimapElements()
     local p = Settings()
+    ApplyMinimapEdgePlacement()
     M:ApplySquareMinimap()
     ApplyZoneBanner()
 
@@ -873,6 +913,8 @@ function M:Init()
     -- Blizzard_Minimap load. Reapply against the final live tree when that
     -- addon announces itself. OnAddonReady runs immediately if it is loaded.
     OnAddonReady("Blizzard_Minimap", function()
+        ApplyMinimapEdgePlacement()
         if Settings().hideMiniDayNight then ApplyDayNightVisibility() end
     end)
+    OnAddonReady("Blizzard_EditMode", ApplyMinimapEdgePlacement)
 end

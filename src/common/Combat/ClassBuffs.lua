@@ -55,6 +55,14 @@ local CATALOG = {
           type = "reactive", spellIDs = { 6572, 6574, 7379, 11600, 11601, 25288 },
           reactiveWindow = 5,
           reactiveMisses = { BLOCK = true, DODGE = true, PARRY = true } },
+        -- Forever cannot identify which enemy dodged without the restricted
+        -- combat log, so its combat provider replaces the target-specific
+        -- nameplate indicator with this player-owned usability reminder. The
+        -- entry is omitted on Classic, where ClassFeatures retains the richer
+        -- per-enemy nameplate presentation.
+        { key = "overpower", label = "Overpower", dbKey = "warriorOverpowerIndicator",
+          type = "reactive", reducedNameplateFallback = true,
+          spellIDs = { 7384, 7887, 11584, 11585 }, reactiveWindow = 5 },
         { key = "battleShout", label = "Battle Shout", dbKey = "classBuffBattleShout",
           type = "buff", partyReminder = true,
           spellIDs = { 6673, 5242, 6192, 11549, 11550, 11551, 25289 } },
@@ -71,7 +79,12 @@ local CATALOG = {
         { key = "lightningShield", label = "Lightning Shield", dbKey = "classBuffLightningShield",
           type = "buff", spellIDs = { 324, 325, 905, 945, 8134, 10431, 10432 } },
         { key = "weaponMainHand", label = "Weapon Imbue", dbKey = "classBuffWeaponMH",
-          type = "weaponMH", imbueSpellIDs = { 8017, 8024, 8033, 8232 } },
+          type = "weaponMH", imbueSpellIDs = {
+              8017, 8018, 8019, 10399, 16314, 16315, 16316, -- Rockbiter Weapon
+              8024, 8027, 8030, 16339, 16341, 16342,        -- Flametongue Weapon
+              8033, 8038, 10456, 16355, 16356,              -- Frostbrand Weapon
+              8232, 8235, 10486, 16362,                     -- Windfury Weapon
+          } },
 
         -- Totem effects are party-only class reminders. Unlike standing buffs,
         -- each elemental slot has mutually exclusive choices, so they appear on
@@ -271,6 +284,12 @@ local CATALOG = {
           reactiveMisses = { PARRY = true } },
     },
     HUNTER = {
+        -- Forever replacement for the target-specific Counterattack nameplate
+        -- marker. The public usability predicate can expose the player-owned
+        -- parry window, but not which attacker created it.
+        { key = "counterattack", label = "Counterattack", dbKey = "hunterCounterattackIndicator",
+          type = "reactive", reducedNameplateFallback = true,
+          spellIDs = { 19306, 20909, 20910 }, reactiveWindow = 5 },
         -- Mongoose Bite opens for five seconds after the hunter dodges an
         -- incoming attack. Like Revenge and Riposte, it can be used on any
         -- target, so the player-owned reminder bar is the correct surface.
@@ -396,7 +415,12 @@ local CATALOG = {
 -- must not mutate a class's reusable definition table.
 local MYBUFFS = {}
 for _, entry in ipairs(CATALOG[PLAYER_CLASS] or {}) do
-    MYBUFFS[#MYBUFFS + 1] = entry
+    local include = true
+    if entry.reducedNameplateFallback then
+        include = type(ns.CombatProviderSupportsReactiveNameplateIndicator) == "function"
+            and ns.CombatProviderSupportsReactiveNameplateIndicator() ~= true
+    end
+    if include then MYBUFFS[#MYBUFFS + 1] = entry end
 end
 
 local USES_TALENT_REMINDER = type(ns.CombatProviderUsesClassBuffTalentReminder) ~= "function"
@@ -417,11 +441,12 @@ for _, entry in ipairs(MYBUFFS) do
 end
 
 local HAS_DURATION_AURAS = false
+local HAS_WEAPON_ENCHANT = false
 for _, entry in ipairs(MYBUFFS) do
     if entry.type == "buff" or entry.type == "procBuff" then
         HAS_DURATION_AURAS = true
-        break
     end
+    if entry.type == "weaponMH" or entry.type == "weaponOH" then HAS_WEAPON_ENCHANT = true end
 end
 
 local CB = ns.ClassBuffs or {}
@@ -436,9 +461,9 @@ local CreateFrame        = CreateFrame
 local InCombatLockdown   = InCombatLockdown
 local GetInventoryItemID = GetInventoryItemID
 local GetInventoryItemTexture = GetInventoryItemTexture
-local GetWeaponEnchantInfo = ns.API.GetWeaponEnchantInfo or GetWeaponEnchantInfo
-local IsUsableSpell      = IsUsableSpell
-local GetSpellCooldown   = GetSpellCooldown
+local ReadWeaponEnchantInfo = ns.API.ReadWeaponEnchantInfo
+local IsUsableSpell      = ns.API.IsSpellUsable
+local IsSpellOnCooldown  = ns.API.IsSpellOnCooldown
 local UnitBuff           = ns.API.UnitBuff
 local GetSpellInfo       = ns.API.GetSpellInfo
 local GetSpellTexture    = ns.API.GetSpellTexture
@@ -756,10 +781,32 @@ end
 -- one and could report the wrong remaining time, so the lowest index still wins.
 local buffIndexByName = {}
 local buffExpiryByName = {}
+local buffSnapshotReady = false
+
+-- Forever/Midnight hides aura identity while its aura domain is restricted.
+-- An unreadable scan is not an empty scan: keep the last readable snapshot so
+-- a buff that was present at pull does not turn into a false missing reminder.
+-- If the addon loads for the first time inside a restricted interval there is
+-- no trustworthy state yet, so aura-backed reminders stay hidden until the
+-- first readable reconciliation.
+--
+-- Own successful casts are still readable on the supported Forever baseline.
+-- Track those as a narrow optimistic override so casting Battle Shout in combat
+-- can dismiss its reminder without inspecting secret aura data. The next
+-- readable snapshot is authoritative and clears these overrides.
+local playerCastPresent = {}
+local weaponSnapshotReady = false
+local weaponMainHandPresent, weaponMainHandRemaining
+local weaponOffHandPresent, weaponOffHandRemaining
 
 local function RefreshBuffSnapshot()
+    if ns.API.ShouldAurasBeSecret and ns.API.ShouldAurasBeSecret() then
+        return buffSnapshotReady
+    end
+
     wipe(buffIndexByName)
     wipe(buffExpiryByName)
+    wipe(playerCastPresent)
     for i = 1, 40 do
         local name, _, _, _, _, expiration = UnitBuff("player", i)
         if not name then break end
@@ -768,9 +815,15 @@ local function RefreshBuffSnapshot()
             buffExpiryByName[name] = (expiration and expiration > 0) and expiration or false
         end
     end
+    buffSnapshotReady = true
+    return true
 end
 
-local function HasBuff(nameSet)
+local function HasBuff(entry)
+    if playerCastPresent[entry.key] then return true end
+    if not buffSnapshotReady then return nil end
+
+    local nameSet = nameCache[entry.key]
     if not nameSet then return false end
     local bestIndex, bestExpiry
     for name in pairs(nameSet) do
@@ -784,6 +837,21 @@ local function HasBuff(nameSet)
     return true, bestExpiry and (bestExpiry - GetTime()) or nil
 end
 
+local function RefreshWeaponSnapshot()
+    if type(ReadWeaponEnchantInfo) ~= "function" then return weaponSnapshotReady end
+    local readable, hasMH, mhExpiration, _, _, hasOH, ohExpiration = ReadWeaponEnchantInfo()
+    if not readable then return weaponSnapshotReady end
+
+    weaponMainHandPresent = hasMH == true
+    weaponMainHandRemaining = type(mhExpiration) == "number" and mhExpiration > 0
+        and (mhExpiration / 1000) or nil
+    weaponOffHandPresent = hasOH == true
+    weaponOffHandRemaining = type(ohExpiration) == "number" and ohExpiration > 0
+        and (ohExpiration / 1000) or nil
+    weaponSnapshotReady = true
+    return true
+end
+
 local function HasUnspentTalentPoints()
     if not UnitCharacterPoints then return false end
     return (tonumber(UnitCharacterPoints("player")) or 0) > 0
@@ -791,18 +859,20 @@ end
 
 local function EntryPresence(e)
     if e.type == "buff" then
-        return HasBuff(nameCache[e.key])
+        return HasBuff(e)
     elseif e.type == "talents" then
         -- "Present" means there is nothing to remind the player about.
         return not HasUnspentTalentPoints()
     elseif e.type == "weaponMH" then
         if not GetInventoryItemID("player", 16) then return true end -- no MH weapon: nothing to remind
-        local has, mhExp = GetWeaponEnchantInfo()
-        return has and true or false, (mhExp and mhExp > 0) and (mhExp / 1000) or nil
+        if playerCastPresent[e.key] then return true end
+        if not weaponSnapshotReady then return nil end
+        return weaponMainHandPresent, weaponMainHandRemaining
     elseif e.type == "weaponOH" then
         if not GetInventoryItemID("player", 17) then return true end -- no OH weapon equipped: skip
-        local _, _, _, _, hasOff, ohExp = GetWeaponEnchantInfo()
-        return hasOff and true or false, (ohExp and ohExp > 0) and (ohExp / 1000) or nil
+        if playerCastPresent[e.key] then return true end
+        if not weaponSnapshotReady then return nil end
+        return weaponOffHandPresent, weaponOffHandRemaining
     end
     return true
 end
@@ -825,18 +895,10 @@ end
 local reactiveUntil = {}   -- entry.key -> GetTime() expiry
 local PLAYER_GUID          -- resolved at login; CLEU compares against it
 
--- Anything longer than the global cooldown is a real cooldown. Comparing
--- against 1.5 rather than 0 keeps the GCD after any other spell from reading
--- as "Revenge is spent".
-local GCD_MAX = 1.5
-
-local function ReactiveOnCooldown(names)
-    if not names or not GetSpellCooldown then return false end
-    for name in pairs(names) do
-        local start, duration = GetSpellCooldown(name)
-        if start and start > 0 and duration and duration > GCD_MAX then
-            return true
-        end
+local function ReactiveOnCooldown(entry)
+    if not entry or not IsSpellOnCooldown then return false end
+    for _, spellID in ipairs(entry.spellIDs or {}) do
+        if knownCache[entry.key] and IsSpellOnCooldown(spellID) then return true end
     end
     return false
 end
@@ -872,11 +934,17 @@ local function IsReactiveReady(e)
         reactiveUntil[e.key] = nil
     end
 
-    local names = nameCache[e.key]
-    if ReactiveOnCooldown(names) then return false end
-    if names and IsUsableSpell then
-        for name in pairs(names) do
-            if IsUsableSpell(name) then return true end
+    if ReactiveOnCooldown(e) then return false end
+    if IsUsableSpell then
+        for _, spellID in ipairs(e.spellIDs or {}) do
+            if ns.API.IsKnownSpellID(spellID) then
+                local usable, insufficientPower = IsUsableSpell(spellID)
+                -- A reactive condition can be open while the warrior lacks the
+                -- Rage to cast. In that case insufficientPower is the client's
+                -- explicit reason for false usability, so the window is still
+                -- worth presenting.
+                if usable == true or insufficientPower == true then return true end
+            end
         end
     end
     return false
@@ -903,7 +971,7 @@ local function ShouldRemind(e, warnSec)
     if e.type == "procBuff" then
         -- INVERTED reminder: show while the proc buff IS active, with its
         -- remaining time for the countdown text; hide once it fades/is spent.
-        local present, remaining = HasBuff(nameCache[e.key])
+        local present, remaining = HasBuff(e)
         if present then return true, remaining end
         return false
     end
@@ -911,6 +979,7 @@ local function ShouldRemind(e, warnSec)
         return ns.PetHappiness and ns.PetHappiness.NeedsFeed and ns.PetHappiness.NeedsFeed() or false
     end
     local present, remaining = EntryPresence(e)
+    if present == nil then return false end
     if not present then return true, 0 end
     if warnSec > 0 and remaining and remaining > 0 and remaining <= warnSec then
         return true, remaining
@@ -1071,8 +1140,10 @@ local function MoversAvailable()
 end
 
 local function SelfReminderActive()
-    local on = ns.Opt("classBuffEnabled", true) ~= false
-    return ns.MoverDependentEnabled(on)
+    -- The Class Features family master is the sole runtime master. The former
+    -- classBuffEnabled preference remains in saved profiles for compatibility
+    -- but no longer creates a second, easily missed enable gate.
+    return ns.MoverDependentEnabled(true)
 end
 
 local function Evaluate()
@@ -1105,6 +1176,7 @@ local function Evaluate()
     -- One aura walk for the whole pass. Must happen before the ShouldRemind
     -- loop below, which reads the snapshot rather than calling UnitBuff itself.
     RefreshBuffSnapshot()
+    if HAS_WEAPON_ENCHANT then RefreshWeaponSnapshot() end
 
     bar:SetSize(size, size)
 
@@ -1248,6 +1320,24 @@ local function ClearReactiveOnCast(spellID)
     end
 end
 
+local function RecordPlayerBuffCast(spellID)
+    if ns.API.CanAccessValue and not ns.API.CanAccessValue(spellID) then return end
+    if not spellID then return end
+    local changed = false
+    for _, e in ipairs(MYBUFFS) do
+        if (e.type == "buff" and not e.partyOnly) or e.type == "weaponMH" or e.type == "weaponOH" then
+            for _, id in ipairs(e.spellIDs or e.imbueSpellIDs or {}) do
+                if id == spellID then
+                    playerCastPresent[e.key] = true
+                    changed = true
+                    break
+                end
+            end
+        end
+    end
+    if changed then QueueEvaluate() end
+end
+
 -- ---------------------------------------------------------------------------
 -- Driver: cheap 0.5s ticker plus event nudges. Only runs for supported classes.
 -- ---------------------------------------------------------------------------
@@ -1362,14 +1452,29 @@ function QueueEvaluate()
 end
 
 local function HandleClassBuffEvent(_, event, unit, _arg2, spellID)
-    if event == "UNIT_AURA" or event == "UNIT_INVENTORY_CHANGED" then
+    if event == "UNIT_AURA" then
+        -- Patch 12.1 may make the UNIT_AURA payload itself secret. Check the
+        -- domain before comparing the unit token; the evaluation will retain
+        -- the last readable snapshot while restricted.
+        if ns.API.ShouldAurasBeSecret and ns.API.ShouldAurasBeSecret() then
+            QueueEvaluate()
+            return
+        end
+        if unit and unit ~= "player" then return end
+        QueueEvaluate()
+    elseif event == "UNIT_INVENTORY_CHANGED" then
         if unit and unit ~= "player" then return end
         -- Coalesced: the storm case. See QueueEvaluate above.
         QueueEvaluate()
     elseif event == "CHARACTER_POINTS_CHANGED" and USES_TALENT_REMINDER then
         Evaluate()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        if unit == "player" then ClearReactiveOnCast(spellID) end
+        local unitReadable = not ns.API.CanAccessValue or ns.API.CanAccessValue(unit)
+        local spellReadable = not ns.API.CanAccessValue or ns.API.CanAccessValue(spellID)
+        if unitReadable and spellReadable and unit == "player" then
+            ClearReactiveOnCast(spellID)
+            RecordPlayerBuffCast(spellID)
+        end
     elseif event == "SPELL_UPDATE_USABLE" or event == "SPELL_UPDATE_COOLDOWN" then
         -- Coalesced, not a direct Evaluate: this event also fires on cooldown
         -- and power changes, so it arrives in bursts. It must never reach the
@@ -1436,7 +1541,11 @@ local function RegisterRuntimeEvents()
         -- Fires when the cooldown starts and again when it ends, so the icon
         -- clears on spend and returns promptly if window time survives.
         frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
-        -- Consuming the ability closes the window early.
+    end
+    if HAS_REACTIVE or HAS_DURATION_AURAS then
+        -- Consuming a reactive ability closes its window early. Aura-backed
+        -- reminders use the same readable player-only event to record a
+        -- successful self-buff cast while aura identity is secret.
         if frame.RegisterUnitEvent then
             frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
         else

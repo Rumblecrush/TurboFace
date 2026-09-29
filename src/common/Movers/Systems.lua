@@ -30,6 +30,7 @@ local AddUniqueFrame = M._AddUniqueFrame
 local order = M._order
 local PointFromCenter = M._PointFromCenter
 local QUEST_TRACKER_MOVER_AVAILABLE = ns.FeatureAvailable("movers.questTracker", true)
+local ALERT_TOAST_MOVER_AVAILABLE = ns.FeatureAvailable("movers.alertToasts", false)
 
 -- System-mover state (owned by this file)
 local tooltipAnchor
@@ -565,6 +566,27 @@ local function RegisterBlizzardLootMovers(self)
     InstallLootMoverHooks()
 end
 
+local function RegisterAlertToastMover(self)
+    if not ALERT_TOAST_MOVER_AVAILABLE or ElementDB("AlertToasts").enabled == false then return end
+    local frame = _G.AlertFrame
+    if not frame then return end
+
+    -- Recipe-learned notifications are pooled frames, but Blizzard anchors the
+    -- entire pool to this stable container. Move only the base anchor so the
+    -- native queue, animations, clicks, and frame recycling remain untouched.
+    local existing = elements.AlertToasts
+    local p = (existing and existing.defaultPoint)
+        or CapturePoint(frame)
+        or { "BOTTOM", UIParent, "BOTTOM", 0, 128 }
+    self:RegisterElement("AlertToasts", frame, {
+        label = "Recipe / Alert Toasts",
+        overlayWidth = 312,
+        overlayHeight = 89,
+        fallbackPoint = p,
+        defaultPoint = p,
+    })
+end
+
 -- =============================================================================
 -- Minimap mail notification
 --
@@ -887,6 +909,7 @@ M.RegisterSystemFrameMovers = function(self)
     end
 
     RegisterBlizzardLootMovers(self)
+    RegisterAlertToastMover(self)
     RegisterMinimapMailMover(self)
 
     -- Blizzard_TimeManager is load-on-demand, so TimeManagerClockButton

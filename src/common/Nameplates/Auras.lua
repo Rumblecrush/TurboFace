@@ -429,7 +429,12 @@ function ns:CacheAuraSettings()
     ns.c_buffFilterMode = auras.buffFilterMode or "ONLY_DISPELLABLE"
     ns.c_maxBuffs = auras.maxBuffs or 4
     ns.c_buffIconWidth = auras.buffIconWidth or 18
-    ns.c_buffIconHeight = auras.buffIconHeight or 18
+    -- The UI exposes one Buff Icon Size control, and both available border
+    -- treatments assume that value describes a square icon. A historical
+    -- stored height (18 with a default width of 26) otherwise squashes the
+    -- icon art and turns the rounded ring into an ellipse. Derive height at
+    -- read time so existing profiles and future slider changes stay square.
+    ns.c_buffIconHeight = ns.c_buffIconWidth
     ns.c_buffXOffset = auras.buffXOffset or 0
     ns.c_buffYOffset = auras.buffYOffset or 0
     ns.c_buffGrowDirection = auras.buffGrowDirection or "CENTER"

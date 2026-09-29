@@ -3,6 +3,11 @@
 TurboFace releases publish separate Classic Era and WoW Forever packages from
 one verified source tag.
 
+For the complete local-development, branch, pull-request, merge, tag, GitHub,
+and CurseForge lifecycle, see the
+[development-to-CurseForge workflow](DEV_TO_CURSEFORGE.md). This file is the
+short checklist for a release that is already ready to publish.
+
 ## Prerequisites
 
 - The release changes are merged into protected `main`.

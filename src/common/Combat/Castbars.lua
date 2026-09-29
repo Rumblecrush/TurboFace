@@ -104,6 +104,7 @@ local startTime  = 0
 local endTime    = 0
 local duration   = 0
 local holdTime   = 0
+local targetTimingReadable = false
 -- Target equivalent of pCastGUID: a target queueing another spell mid-cast
 -- fires FAILED for the queued spell, not the one on the bar.
 local castGUIDShown = nil
@@ -121,6 +122,46 @@ local pHoldTime   = 0
 -- not the one being cast, so the bar must match GUIDs before reacting or it
 -- reads "Failed" mid-cast. Same guard SwingTimers.lua uses for this case.
 local pCastGUID   = nil
+
+-- Forever can deliver the UNIT_SPELLCAST event's cast GUID as an opaque secret
+-- string for non-player units. Never cache or compare such a value: even two
+-- secret strings that refer to the same cast cannot be compared from tainted
+-- addon execution. Classic and player-owned GUIDs remain readable, preserving
+-- the queued/spammed-cast mismatch guard where the client supports it.
+local function ReadableCastGUID(value)
+    if ns.API.CanAccessValue and not ns.API.CanAccessValue(value) then return nil end
+    if type(value) ~= "string" or value == "" then return nil end
+    return value
+end
+
+local function ReadableCastDisplayValue(value)
+    if ns.API.CanAccessValue and not ns.API.CanAccessValue(value) then return nil end
+    return value
+end
+
+-- Target cast timestamps can be secret on Forever. Arithmetic on an opaque
+-- number may appear to work during the event callback yet yield a protected
+-- zero-like value that later raises "Division by zero" in the cadence tick.
+-- Only copy timestamps into addon-owned numeric state after both values pass
+-- the accessibility boundary and form a positive interval.
+local function CaptureTargetTiming(start, finish)
+    local readableNumber = ns.API.IsReadableNumber
+    local startReadable = readableNumber and readableNumber(start)
+        or ((not ns.API.CanAccessValue or ns.API.CanAccessValue(start)) and type(start) == "number")
+    local finishReadable = readableNumber and readableNumber(finish)
+        or ((not ns.API.CanAccessValue or ns.API.CanAccessValue(finish)) and type(finish) == "number")
+    if not startReadable or not finishReadable or finish <= start then
+        targetTimingReadable = false
+        startTime, endTime, duration = 0, 0, 0
+        return false
+    end
+
+    startTime = start / 1000
+    endTime = finish / 1000
+    duration = (finish - start) / 1000
+    targetTimingReadable = duration > 0
+    return targetTimingReadable
+end
 
 -- =============================================================================
 -- BLIZZARD DEFAULT PLAYER CASTBAR SUPPRESSION
@@ -400,17 +441,21 @@ local function ShowCast(name, texture, start, finish, channel)
 
     ResizeCastbar(castbar)
 
-    active      = true
-    if CastTick then ns.Cadence:Add(Castbars, 1 / 60, CastTick, true) end
-    isChannel   = channel
-    startTime   = start  / 1000
-    endTime     = finish / 1000
-    duration    = math.max((finish - start) / 1000, 0.001)
-    holdTime    = 0
+    active    = true
+    isChannel = channel
+    holdTime  = 0
+    CaptureTargetTiming(start, finish)
+    if targetTimingReadable and CastTick then
+        ns.Cadence:Add(Castbars, 1 / 60, CastTick, true)
+    end
 
     castbar.timerText:SetTextColor(1, 1, 1)
     castbar.timerText._lastTenths = nil
-    SetCompactTimerText(castbar.timerText, endTime - GetTime())
+    if targetTimingReadable then
+        SetCompactTimerText(castbar.timerText, endTime - GetTime())
+    else
+        castbar.timerText:SetText(channel and (CHANNELING or "Channeling") or (CASTING or "Casting"))
+    end
     if not castbar._embeddedPresentation then
         castbar.spellText:SetText(name or "")
         castbar.spellText:SetTextColor(1, 1, 1)
@@ -418,16 +463,18 @@ local function ShowCast(name, texture, start, finish, channel)
         castbar.spellText:Show()
     end
     SetBarColor(BAR_COLOR[1], BAR_COLOR[2], BAR_COLOR[3])
-    castbar.bar:SetWidth(0.001)
-    castbar.spark:Show()
+    castbar.bar:SetWidth(targetTimingReadable and 0.001
+        or (castbar._fillWidth or COMPACT_CAST_FILL_W))
+    if targetTimingReadable then castbar.spark:Show() else castbar.spark:Hide() end
     castbar:Show()
     AnchorTargetCastbar()
 end
 
 local function TargetCastMatches(castGUID)
     if not active then return true end
-    if not castGUIDShown or not castGUID then return true end
-    return castGUIDShown == castGUID
+    local incomingGUID = ReadableCastGUID(castGUID)
+    if not castGUIDShown or not incomingGUID then return true end
+    return castGUIDShown == incomingGUID
 end
 
 local function StopCast()
@@ -435,6 +482,7 @@ local function StopCast()
     if holdTime > 0 then return end
     active   = false
     holdTime = 0
+    targetTimingReadable = false
     if castbar then
         castbar:Hide()
         castbar.spark:Hide()
@@ -572,8 +620,9 @@ end
 -- genuinely ended.
 local function PlayerCastMatches(castGUID)
     if not pActive then return true end
-    if not pCastGUID or not castGUID then return true end
-    return pCastGUID == castGUID
+    local incomingGUID = ReadableCastGUID(castGUID)
+    if not pCastGUID or not incomingGUID then return true end
+    return pCastGUID == incomingGUID
 end
 
 local function StopPlayerCast()
@@ -622,7 +671,7 @@ CastTick = function(self, elapsed)
                 castbar:Hide()
                 castbar.spark:Hide()
             end
-        elseif active then
+        elseif active and targetTimingReadable then
             if not UnitExists("target") then
                 StopCast()
             else
@@ -683,7 +732,8 @@ CastTick = function(self, elapsed)
 
     -- Nothing casting and no fail/interrupt hold: park the driver until the
     -- next cast event shows it again
-    if not active and holdTime <= 0 and not pActive and pHoldTime <= 0 then
+    local targetNeedsTick = holdTime > 0 or (active and targetTimingReadable)
+    if not targetNeedsTick and not pActive and pHoldTime <= 0 then
         ns.Cadence:Remove(Castbars)
     end
 end
@@ -731,6 +781,7 @@ CastEventHandler = function(self, event, unit, castGUID)
     if event == "PLAYER_TARGET_CHANGED" then
         active   = false
         holdTime = 0
+        targetTimingReadable = false
         castGUIDShown = nil
         if castbar then castbar:Hide() castbar.spark:Hide() end
         return
@@ -751,7 +802,7 @@ CastEventHandler = function(self, event, unit, castGUID)
             local name, _, texture, start, finish = UnitCastingInfo("player")
             local spellID = select(9, UnitCastingInfo("player"))
             if name then
-                pCastGUID = castGUID
+                pCastGUID = ReadableCastGUID(castGUID)
                 ShowPlayerCast(name, texture, start, finish, false, spellID)
             end
 
@@ -759,7 +810,7 @@ CastEventHandler = function(self, event, unit, castGUID)
             local name, _, texture, start, finish = UnitChannelInfo("player")
             local spellID = select(8, UnitChannelInfo("player"))
             if name then
-                pCastGUID = castGUID
+                pCastGUID = ReadableCastGUID(castGUID)
                 ShowPlayerCast(name, texture, start, finish, true, spellID)
             end
 
@@ -810,32 +861,42 @@ CastEventHandler = function(self, event, unit, castGUID)
         -- equivalent treatment yet. Wire ShowCast up to it rather than
         -- destructuring a value nothing consumes.
         local name, _, texture, start, finish = UnitCastingInfo("target")
-        if name then
-            castGUIDShown = castGUID
-            ShowCast(name, texture, start, finish, false)
-        end
+        castGUIDShown = ReadableCastGUID(castGUID)
+        ShowCast(ReadableCastDisplayValue(name), ReadableCastDisplayValue(texture),
+            start, finish, false)
 
     elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
         local name, _, texture, start, finish = UnitChannelInfo("target")
-        if name then
-            castGUIDShown = castGUID
-            ShowCast(name, texture, start, finish, true)
-        end
+        castGUIDShown = ReadableCastGUID(castGUID)
+        ShowCast(ReadableCastDisplayValue(name), ReadableCastDisplayValue(texture),
+            start, finish, true)
 
     elseif event == "UNIT_SPELLCAST_DELAYED" then
-        local name, _, _, start, finish = UnitCastingInfo("target")
-        if name and active then
-            startTime = start  / 1000
-            endTime   = finish / 1000
-            duration  = math.max((finish - start) / 1000, 0.001)
+        local _, _, _, start, finish = UnitCastingInfo("target")
+        if active then
+            CaptureTargetTiming(start, finish)
+            if targetTimingReadable and CastTick then
+                ns.Cadence:Add(Castbars, 1 / 60, CastTick, true)
+                castbar.spark:Show()
+            else
+                castbar.bar:SetWidth(castbar._fillWidth or COMPACT_CAST_FILL_W)
+                castbar.spark:Hide()
+                castbar.timerText:SetText(CASTING or "Casting")
+            end
         end
 
     elseif event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
-        local name, _, _, start, finish = UnitChannelInfo("target")
-        if name and active then
-            startTime = start  / 1000
-            endTime   = finish / 1000
-            duration  = math.max((finish - start) / 1000, 0.001)
+        local _, _, _, start, finish = UnitChannelInfo("target")
+        if active then
+            CaptureTargetTiming(start, finish)
+            if targetTimingReadable and CastTick then
+                ns.Cadence:Add(Castbars, 1 / 60, CastTick, true)
+                castbar.spark:Show()
+            else
+                castbar.bar:SetWidth(castbar._fillWidth or COMPACT_CAST_FILL_W)
+                castbar.spark:Hide()
+                castbar.timerText:SetText(CHANNELING or "Channeling")
+            end
         end
 
     elseif event == "UNIT_SPELLCAST_STOP"
@@ -878,6 +939,7 @@ local function DeactivateRuntime()
     active, pActive = false, false
     holdTime, pHoldTime = 0, 0
     castGUIDShown, pCastGUID = nil, nil
+    targetTimingReadable = false
     HideAllCastRows()
     HideBlizzardPlayerCastbar()
 end

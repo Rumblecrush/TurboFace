@@ -329,7 +329,7 @@ function Debug:ModuleReport()
         EnabledWord(Dep(db.netWorthEnabled == true)),
         EnabledWord(Dep(db.hearthEnabled ~= false)),
         EnabledWord(Dep(db.trackerEnabled ~= false)),
-        EnabledWord(Dep(Gate("class") and db.classBuffEnabled ~= false)),
+        EnabledWord(Dep(Gate("class"))),
         EnabledWord(Dep(Gate("plus", "flightBar")))))
     local meterProvider = ns.Providers and ns.Providers:Get("combatMeter") or ns.CombatMeter
     local meterProviderName = ns.Providers and ns.Providers:GetName("combatMeter") or "turboface-local"

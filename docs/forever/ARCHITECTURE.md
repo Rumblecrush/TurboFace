@@ -1,12 +1,16 @@
 # TurboFace Forever Architecture
 
-**Last updated:** 2026-09-27
-**Current addon version:** 0.18.3
+The Forever Plus interface adapter may relax `MinimapCluster` screen clamping for the optional minimap-edge setting. Edit Mode retains ownership of the cluster anchor and layout persistence; TurboFace only clears the padded drag boundary and reapplies it after `AnchorSelectionFrame()` recalculates Blizzard's selection insets.
+
+The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
+
+**Last updated:** 2026-09-29
+**Current addon version:** 0.18.7
 **Target client:** World of Warcraft Forever beta 1.60.1, Interface 16001, project 1  
 **Observed beta build:** 69977  
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.18.3
+**Source baseline:** TurboFace unified 0.18.7
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -704,6 +708,56 @@ by `SpendTalentPoint.lua`, and the direct native-nameplate reactive renderer sta
 detached implementation exists. This is presentation ownership only; the shared class spell/buff
 catalogs and runtime policy remain common.
 
+The self-buff reminder has a narrower secret-aura contract on Forever. A readable player-aura pass
+is authoritative out of combat. While `C_Secrets.ShouldAurasBeSecret()` is true, ClassBuffs retains
+that last readable snapshot instead of treating the unavailable scan as an empty aura list. If no
+readable snapshot exists yet, aura-backed reminders fail closed and remain hidden. A readable
+`UNIT_SPELLCAST_SUCCEEDED:player` for a catalogued self buff may mark that one reminder present so a
+successful Battle Shout cast dismisses its icon during combat; the next readable aura pass replaces
+the optimistic cast state. The implementation does not infer an in-combat expiration time.
+
+The Warrior Revenge reminder is a reduced player-owned reactive surface. Forever queries
+`C_Spell.IsSpellUsable` by known Revenge rank and treats the API's readable `insufficientPower`
+result as an open reactive condition even when the Warrior lacks Rage. Cooldown gating consumes only
+the NeverSecret `isActive` and `isOnGCD` classifications from `C_Spell.GetSpellCooldown`; secret
+start/duration values are never read. This path can report the window only when the client considers
+Revenge castable in the current stance. The Classic CLEU observation remains a supplemental source
+for its broader out-of-stance behavior and is not reconstructed on Forever.
+
+Overpower uses the same reduced usability renderer on Forever. The existing
+`warriorOverpowerIndicator` preference selects a player-owned icon on the Class Buff bar instead of
+the Classic per-enemy nameplate indicator. It reports only that the current spell/stance/target
+combination makes a known Overpower rank usable (or blocked solely by insufficient Rage). It cannot
+identify which enemy dodged, so no Forever nameplate is annotated and no target identity is inferred.
+
+The Class Features family master is the sole enable gate for the player-owned reminder bar. The
+legacy `classBuffEnabled` value remains tolerated in portable profiles but is no longer consulted at
+runtime. The Class tab presents its shared font, text style, icon size, spacing, and expiry warning
+controls immediately below that master, followed by the class-specific feature toggles. Forever
+therefore presents Overpower, Revenge, and Battle Shout as peer Warrior options.
+
+### 12.0a Class reminder support matrix
+
+Every class uses the same player-owned bar and sole Class Features master, but the information source
+depends on the feature:
+
+| Class | Forever behavior |
+|---|---|
+| Warrior | Battle Shout uses readable/last-known aura state; Revenge and Overpower use current spell usability. Overpower is not target-specific. |
+| Shaman | Lightning Shield uses readable/last-known aura state. Main-hand imbue uses `C_Item.GetWeaponEnchantInfo` out of restricted execution and retains its last readable state in combat. Clearcasting is shown only when its aura is readable. |
+| Druid | Mark of the Wild and Thorns use readable/last-known aura state. |
+| Paladin | Seal, Blessing, and Aura families use readable/last-known aura state. |
+| Warlock | Demon Skin/Demon Armor uses readable/last-known aura state. |
+| Rogue | Riposte uses current spell usability and therefore remains player/target/stance dependent. |
+| Hunter | Counterattack and Mongoose Bite use current spell usability; Counterattack is not attacker-specific. Feed Pet remains player-pet state. Aspects and Trueshot Aura use readable/last-known aura state. |
+| Priest | Fortitude, Inner Fire, Divine Spirit, Fear Ward, and Shadow Protection use readable/last-known aura state. |
+| Mage | Arcane Intellect and armor families use readable/last-known aura state. Clearcasting is shown only when its aura is readable. |
+
+“Last known” never means inferred removal: when Forever hides aura or temporary-enchant state, the
+bar preserves its previous readable answer and reconciles when the domain becomes readable again.
+Successful player casts can mark a catalogued self buff or weapon imbue present without inspecting
+the hidden state. Proc auras are not reconstructed from damage events or guessed timers.
+
 ### 12.1 Player swing clock
 
 Forever exposes `PLAYER_SWING(swingDuration, swingType)`. When available, it is authoritative for the player's own MH/OH/ranged clocks:
@@ -742,6 +796,18 @@ the value is readable or secret.
 ### 12.4 Predictions
 
 Classic DoT/heal prediction algorithms can depend on readable unit health and aura state. Where Forever makes those values secret, the custom numeric prediction path fails closed. Do not substitute guessed health bases or infer precise missing values from UI pixels.
+
+### 12.5 Leash Timer
+
+Classic retains GUID-authoritative combat-log resets. Forever has no public readable combat-log
+decoder, and its player-owned events cannot reliably attribute every reset to an individual enemy.
+The `combat.leashTimer` capability is therefore blocked on Forever: Options exposes a disabled
+explanatory toggle, Movers omits its row, and the runtime fails closed without changing the portable
+saved preference. The event-based compatibility work remains dormant for future API reevaluation.
+
+All unit identity, metadata, combat-state, marker, and speed reads pass through secret-safe `ns.API`
+adapters. Unknown values are not equivalent to `false` or zero: an unreadable combat flag cannot
+prove disengagement, and unreadable movement cannot prove the stationary-swing reset condition.
 
 ---
 
@@ -922,6 +988,12 @@ client branches inside SkillData:
 
 Human requirement text is stored in `requirementText`; `requires` is reserved for prerequisite
 spell-ID tables. This keeps profession text from being interpreted as a spell dependency.
+
+The shared Skill Tracker does not call legacy skill globals directly. `ns.API.GetNumSkillLines`,
+`GetSkillLineInfo`, and the header expansion helpers preserve Era's tuple contract while Forever's
+adapter reads `C_SkillInfo.SkillLineAttributes`. Era talent tabs and modern player-spellbook skill
+lines provide localized class-line names, keeping the `5 × level` weapon heuristic from admitting
+class skills without hardcoded English names.
 
 ### 15.8 Detached Spellbook pages
 
@@ -1113,9 +1185,13 @@ Forever-specific rules:
 
 Known-incomplete controls remain visible but disabled with the tooltip **This feature is currently
 disabled on Forever**. This currently covers Global DoT/Heal Prediction; the three deferred
-Nameplate identity/damaged-only controls; and the Unit Frames, Cast Bars, and Class Features masters. The
+Nameplate identity/damaged-only controls; and the Unit Frames and Cast Bars masters. The
 restriction is a `Core/Client.lua` policy consumed by both Options and effective runtime gates, so a
 portable profile cannot activate the blocked path merely because its stored checkbox is true.
+
+Class Features is no longer development-restricted on Forever. Its player-owned reminder bar and
+per-class supported/last-known-state adapters have passed live validation, so the ordinary portable
+`modules.class` preference is again the sole master gate.
 
 The Forever target swing-timer row remains part of the shared Swing Timers presentation and Movers.
 Because hostile `UnitAttackSpeed` is opaque, `ForeverSwingTimerAdapter.lua` estimates the selected

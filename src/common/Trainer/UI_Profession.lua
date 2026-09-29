@@ -481,9 +481,13 @@ Trainer:AddBuilder(function()
         end
 
         -- Fallback if the engine is unavailable.
-        if not GetNumSkillLines or not GetSkillLineInfo then return 0, 0 end
-        for i = 1, GetNumSkillLines() do
-            local skillName, isHeader, _, skillRank, _, _, skillMaxRank = GetSkillLineInfo(i)
+        local getNumSkillLines = ns.API.GetNumSkillLines
+        local getSkillLineInfo = ns.API.GetSkillLineInfo
+        if not getNumSkillLines or not getSkillLineInfo then return 0, 0 end
+        local ok, count = pcall(getNumSkillLines)
+        count = ok and tonumber(count) or 0
+        for i = 1, count do
+            local skillName, isHeader, _, skillRank, _, _, skillMaxRank = getSkillLineInfo(i)
             if not isHeader and skillName == professionName then
                 return skillRank or 0, skillMaxRank or 0
             end

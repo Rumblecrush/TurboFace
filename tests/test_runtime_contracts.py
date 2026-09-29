@@ -11,6 +11,169 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_leash_timer_uses_secret_safe_midnight_event_fallbacks(self) -> None:
+        source = (ROOT / "src" / "common" / "Combat" / "LeashTimer.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Core" / "Compat.lua").read_text()
+        classic = (ROOT / "src" / "classic" / "Core" / "Compat.lua").read_text()
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+
+        self.assertIn('ns.FeatureAvailable("combat.leashTimer", true) == false', source)
+        self.assertIn("local UnitGUID = API.ReadUnitGUID", source)
+        self.assertIn("local UnitAffectingCombat = API.ReadUnitAffectingCombat", source)
+        self.assertIn("local GetUnitSpeed = API.ReadUnitSpeed", source)
+        self.assertIn('event == "UNIT_SPELLCAST_SUCCEEDED"', source)
+        self.assertIn('event == "UNIT_COMBAT"', source)
+        self.assertIn('event == "PLAYER_TARGET_DIED"', source)
+        self.assertIn('API.RegisterUnitEvent(eventFrame, "UNIT_COMBAT", "player")', source)
+        self.assertIn('API.RegisterUnitEvent(eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")', source)
+        self.assertIn("API.IsSpellHarmful(arg3) == true", source)
+        self.assertIn("UnitAffectingCombat(unit) == false", source)
+        self.assertNotIn("not UnitAffectingCombat(unit)", source)
+        self.assertNotIn("local UnitGUID = UnitGUID", source)
+        self.assertNotIn("local GetUnitSpeed = GetUnitSpeed", source)
+
+        self.assertIn('["combat.leashTimer"] = Row("shared", true', client)
+        self.assertIn('Override("combat.leashTimer", "blocked", false', client)
+        self.assertIn('ClientFeatureAvailable("combat.leashTimer", true)', options)
+        self.assertIn('or "Unavailable on Forever: the new API does not expose reliable per-enemy combat attribution."', options)
+        self.assertIn('if sec.available == false then', options)
+        self.assertIn('local gateOn = sec.available ~= false and GateEnabled', options)
+        self.assertIn('table.insert(turboFaceMovers, 7, { "Leash Timer", "LeashTimer" })', options)
+
+        for compat in (forever, classic):
+            self.assertIn("API.IsSpellHarmful", compat)
+            self.assertIn("ReadUnitAffectingCombat", compat)
+            self.assertIn("ReadUnitClassification", compat)
+            self.assertIn("ReadRaidTargetIndex", compat)
+            self.assertIn("ReadUnitSpeed", compat)
+
+    def test_skill_tracker_uses_modern_skillinfo_compatibility_boundary(self) -> None:
+        shared = (ROOT / "src" / "common" / "Skills.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Core" / "Compat.lua").read_text()
+        classic = (ROOT / "src" / "classic" / "Core" / "Compat.lua").read_text()
+
+        self.assertIn("local GetNumSkillLines   = ns.API.GetNumSkillLines", shared)
+        self.assertIn("local GetSkillLineInfo   = ns.API.GetSkillLineInfo", shared)
+        self.assertIn("local ExpandSkillHeader  = ns.API.ExpandSkillHeader", shared)
+        self.assertIn("local function SkillLineCount()", shared)
+        self.assertIn("AddNames(GetNumSpellTabs, GetSpellTabInfo)", shared)
+        self.assertNotIn("local GetNumSkillLines   = GetNumSkillLines", shared)
+
+        for source in (forever, classic):
+            self.assertIn("API.GetNumSkillLines = pick(", source)
+            self.assertIn("API.GetSkillLineInfo = pick(", source)
+            self.assertIn("GetNumSkillLines", source)
+            self.assertIn("GetSkillLineInfo", source)
+            self.assertIn("not info.isCollapsed", source)
+            self.assertIn("API.ExpandSkillHeader = pick(", source)
+            self.assertIn("API.CollapseSkillHeader = pick(", source)
+
+    def test_skill_tracker_scan_restores_headers_and_filters_class_lines(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the skill tracker contract")
+        harness = r'''
+local collapsed = true
+local function Lines()
+    if collapsed then
+        return {
+            { "Weapon Skills", true, false },
+            { "Class Skills", true, false },
+        }
+    end
+    return {
+        { "Weapon Skills", true, true },
+        { "Swords", false, nil, 31, 0, 0, 50 },
+        { "Class Skills", true, true },
+        { "Arms", false, nil, 50, 0, 0, 50 },
+        { "Professions", true, true },
+        { "Mining", false, nil, 40, 0, 0, 75 },
+        { "Mining", false, nil, 42, 0, 0, 75 },
+    }
+end
+
+local ns = {
+    API = {
+        GetNumSkillLines = function() return #Lines() end,
+        GetSkillLineInfo = function(index) return unpack(Lines()[index]) end,
+        ExpandSkillHeader = function(index) assert(index == 0); collapsed = false end,
+        CollapseSkillHeader = function() collapsed = true end,
+        GetNumTalentTabs = function() return nil end,
+        GetTalentTabInfo = function() return nil end,
+        GetNumSpellTabs = function() return 1 end,
+        GetSpellTabInfo = function() return "Arms" end,
+    },
+    DB = function() return {} end,
+    ProfessionData = {
+        GetKey = function(_, name) if name == "Mining" then return "mining" end end,
+        IsSecondary = function() return false end,
+        GetIcon = function() return 123 end,
+    },
+    RegisterCPUProfileTarget = function() end,
+}
+function UnitLevel() return 10 end
+
+assert(loadfile("src/common/Skills.lua"))("TurboFace", ns)
+local result = ns.Skills:Scan()
+assert(collapsed == true)
+assert(#result.weapon == 1 and result.weapon[1].name == "Swords")
+assert(result.byName.Arms == nil)
+assert(#result.profession == 1 and result.profession[1].name == "Mining")
+assert(result.profession[1].rank == 42 and result.profession[1].maxRank == 75)
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_nameplate_buff_icon_size_is_square_and_rebuilds_forever_geometry(self) -> None:
+        defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()
+        shared = (ROOT / "src" / "common" / "Nameplates" / "Auras.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Nameplates" / "ForeverAuras.lua").read_text()
+
+        self.assertIn("buffIconWidth        = 26", defaults)
+        self.assertIn("buffIconHeight       = 26", defaults)
+        self.assertIn("ns.c_buffIconHeight = ns.c_buffIconWidth", shared)
+        self.assertIn("local function ControllerSignature(kind)", forever)
+        self.assertIn("local signature = ControllerSignature(kind)", forever)
+        self.assertIn("styleSignature = signature or ControllerSignature(kind)", forever)
+        self.assertIn("ns.c_buffIconHeight", forever)
+
+    def test_castbars_never_cache_or_compare_secret_cast_guids(self) -> None:
+        source = (ROOT / "src" / "common" / "Combat" / "Castbars.lua").read_text()
+
+        self.assertIn("local function ReadableCastGUID(value)", source)
+        self.assertIn("not ns.API.CanAccessValue(value)", source)
+        self.assertIn("castGUIDShown = ReadableCastGUID(castGUID)", source)
+        self.assertIn("pCastGUID = ReadableCastGUID(castGUID)", source)
+        self.assertIn("local incomingGUID = ReadableCastGUID(castGUID)", source)
+        self.assertNotIn("castGUIDShown = castGUID", source)
+        self.assertNotIn("castGUIDShown == castGUID", source)
+        self.assertNotIn("pCastGUID = castGUID", source)
+        self.assertNotIn("pCastGUID == castGUID", source)
+
+    def test_target_castbar_never_divides_by_opaque_timing(self) -> None:
+        source = (ROOT / "src" / "common" / "Combat" / "Castbars.lua").read_text()
+
+        self.assertIn("local targetTimingReadable = false", source)
+        self.assertIn("local function CaptureTargetTiming(start, finish)", source)
+        self.assertIn("ns.API.IsReadableNumber", source)
+        self.assertIn("if not startReadable or not finishReadable or finish <= start then", source)
+        self.assertIn("elseif active and targetTimingReadable then", source)
+        self.assertIn("local targetNeedsTick = holdTime > 0 or (active and targetTimingReadable)", source)
+        self.assertIn('castbar.timerText:SetText(channel and (CHANNELING or "Channeling")', source)
+        self.assertNotIn("duration  = math.max((finish - start) / 1000, 0.001)", source)
+
+    def test_junk_marks_desaturate_default_bag_item_art(self) -> None:
+        source = (ROOT / "src" / "common" / "Inventory" / "InventoryManager.lua").read_text()
+
+        self.assertIn("local function SetJunkIconDimmed(button, dimmed)", source)
+        self.assertIn("SetItemButtonDesaturated(button, true)", source)
+        self.assertIn("SetItemButtonDesaturated(button, false)", source)
+        self.assertIn("button._tfJunkDimmed = true", source)
+        self.assertIn("SetJunkIconDimmed(button, showJunk == true)", source)
+        self.assertIn("SetJunkIconDimmed(button, false)", source)
+
     def test_forever_target_aura_movers_use_native_secret_container(self) -> None:
         shared = (ROOT / "src" / "common" / "Movers" / "Auras.lua").read_text()
         adapter = (ROOT / "src" / "forever" / "Movers" / "ForeverAuraAdapter.lua").read_text()
@@ -28,6 +191,20 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertIn("SetMouseClickEnabled", adapter)
         self.assertLess(toc.index("Movers\\Auras.lua"), toc.index("Movers\\ForeverAuraAdapter.lua"))
         self.assertLess(toc.index("Movers\\ForeverAuraAdapter.lua"), toc.index("Movers\\Systems.lua"))
+
+    def test_forever_target_debuff_border_matches_nameplate_geometry(self) -> None:
+        target = (ROOT / "src" / "forever" / "Movers" / "ForeverAuraAdapter.lua").read_text()
+        nameplate = (ROOT / "src" / "forever" / "Nameplates" / "ForeverAuras.lua").read_text()
+
+        texture = 'local BORDER_TEXTURE = "Interface\\\\Buttons\\\\UI-Debuff-Overlays"'
+        coords = "localBORDER_COORDS={0.296875,0.5703125,0,0.515625}"
+        for source in (target, nameplate):
+            self.assertIn(texture, source)
+            self.assertIn(coords, source.replace(" ", ""))
+            self.assertIn('border:SetPoint("CENTER")', source)
+        self.assertIn("border:SetSize(controller.iconSize + 2, controller.iconSize + 2)", target)
+        self.assertIn("button.Border = border", target)
+        self.assertNotIn('border:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)', target)
 
     def test_trainer_spellbook_rank_fallback_and_recipe_scrub(self) -> None:
         luajit = shutil.which("luajit")
@@ -253,7 +430,7 @@ assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyPlayerDam
 assert(client:IsSettingDevelopmentRestricted("bubbleNameplates.friendlyNPCDamagedOnly"))
 assert(client:IsGateDevelopmentRestricted("unitframes"))
 assert(client:IsGateDevelopmentRestricted("castBars"))
-assert(client:IsGateDevelopmentRestricted("class"))
+assert(not client:IsGateDevelopmentRestricted("class"))
 assert(not client:IsDevBypassActive())
 
 assert(client:SetDevBypass(true))
@@ -267,6 +444,7 @@ assert(not client:SetDevBypass(false))
 assert(TurboFaceCompatDB.devFeatureBypass == nil)
 assert(client:IsSettingDevelopmentRestricted("dotPredictionEnabled"))
 assert(client:IsGateDevelopmentRestricted("castBars"))
+assert(not client:IsGateDevelopmentRestricted("class"))
 '''
         result = subprocess.run(
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
@@ -415,7 +593,7 @@ assert(modules.playerTicks.enabled == true)
 assert(modules.swingTimers.enabled == false)
 assert(modules.auras.enabled == false)
 assert(modules.castBars.enabled == false)
-assert(modules.class.enabled == false)
+assert(modules.class.enabled == true)
 assert(modules.plus.minimap == false and modules.plus.social == false)
 
 assert(data.quickSetup.enabled == true)
@@ -460,6 +638,55 @@ for _, name in ipairs({
 }) do
     assert(data.movers.elements[name].enabled == false, name .. " should start disabled")
 end
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_rumblecrush_preset_matches_2026_09_29_export(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the preset contract")
+        harness = r'''
+local ns = { Client = { flavor = "classic" }, DB_VERSION = 79 }
+function ns.DeepCopy(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local out = {}
+    seen[value] = out
+    for key, child in pairs(value) do out[ns.DeepCopy(key, seen)] = ns.DeepCopy(child, seen) end
+    return out
+end
+WOW_PROJECT_ID = 1
+function GetBuildInfo() return "1.15.9", "", "", 11509 end
+assert(loadfile("src/common/Core/Schema.lua"))("TurboFace", ns)
+assert(loadfile("src/common/Core/Defaults.lua"))("TurboFace", ns)
+assert(loadfile("src/common/Core/Profiles.lua"))("TurboFace", ns)
+local preset = assert(ns.Profiles:GetPreset("Rumblecrush's Preset"))
+local data = ns.DeepCopy(ns.defaults)
+local function overlay(target, source)
+    for key, value in pairs(source) do
+        if type(value) == "table" and type(target[key]) == "table" then overlay(target[key], value)
+        else target[key] = ns.DeepCopy(value) end
+    end
+end
+overlay(data, preset.data)
+assert(preset.desc == "2026-09-29")
+assert(data.groceryButtonSize == 48)
+assert(data.auraTargetBuffScale == 1.3500000238418579)
+assert(data.auraTargetDebuffScale == 1.3500000238418579)
+assert(data.modules.unitframes.enabled == false)
+assert(data.modules.castBars.enabled == false)
+assert(data.modules.plus.minimap == true and data.modules.plus.social == false)
+assert(data.plus.unclampMinimap == true and data.plus.minimapShape == "round")
+assert(data.movers.activeElement == "GroceryButton")
+assert(data.movers.gridSize == 20)
+assert(data.movers.elements.AlertToasts.x == 0 and data.movers.elements.AlertToasts.y == 220)
+assert(data.movers.elements.GroceryButton.x == 555 and data.movers.elements.GroceryButton.y == -573)
+assert(data.movers.elements.TargetBuffs.x == 365 and data.movers.elements.TargetBuffs.y == -302)
+assert(data.movers.elements.TargetDebuffs.x == 125 and data.movers.elements.TargetDebuffs.y == -260)
+assert(data.combinedBag.x == -21.111124038696289 and data.combinedBag.y == -127.38897705078131)
 '''
         result = subprocess.run(
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
@@ -574,8 +801,17 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
             "local function RefreshBuffSnapshot()",
             "if buffIndexByName[name] == nil then",
             "index < bestIndex",
+            "local buffSnapshotReady = false",
+            "return buffSnapshotReady",
+            "local playerCastPresent = {}",
+            "RecordPlayerBuffCast(spellID)",
+            "if present == nil then return false end",
         ):
             self.assertIn(marker, source)
+
+        secret_guard = source.index("if ns.API.ShouldAurasBeSecret and ns.API.ShouldAurasBeSecret() then")
+        snapshot_wipe = source.index("wipe(buffIndexByName)", secret_guard)
+        self.assertLess(secret_guard, snapshot_wipe, "secret aura pass must not erase the readable snapshot")
 
         def direct_scan(buffs: list[tuple[str, float]], wanted: set[str]) -> tuple[bool, float | None]:
             for name, expiration in buffs[:40]:
@@ -605,6 +841,54 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
             ]
             wanted = set(rng.sample(names, rng.randint(1, 4)))
             self.assertEqual(direct_scan(buffs, wanted), indexed_scan(buffs, wanted), f"case {case}")
+
+    def test_reactive_class_reminders_use_modern_spell_usability(self) -> None:
+        class_buffs = (ROOT / "src" / "common" / "Combat" / "ClassBuffs.lua").read_text()
+        classic = (ROOT / "src" / "classic" / "Core" / "Compat.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Core" / "Compat.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+
+        for marker in (
+            "local IsUsableSpell      = ns.API.IsSpellUsable",
+            "local IsSpellOnCooldown  = ns.API.IsSpellOnCooldown",
+            "if usable == true or insufficientPower == true then return true end",
+            'key = "overpower", label = "Overpower", dbKey = "warriorOverpowerIndicator"',
+            "reducedNameplateFallback = true",
+            "ns.CombatProviderSupportsReactiveNameplateIndicator() ~= true",
+            'key = "counterattack", label = "Counterattack", dbKey = "hunterCounterattackIndicator"',
+            "local ReadWeaponEnchantInfo = ns.API.ReadWeaponEnchantInfo",
+            "if HAS_WEAPON_ENCHANT then RefreshWeaponSnapshot() end",
+        ):
+            self.assertIn(marker, class_buffs)
+        self.assertNotIn("local IsUsableSpell      = IsUsableSpell", class_buffs)
+        self.assertIn("API.IsSpellUsable = pick(IsUsableSpell", classic)
+        self.assertIn("function API.IsSpellOnCooldown(spell)", classic)
+        self.assertIn("function API.IsSpellUsable(spell)", forever)
+        self.assertIn("spells.IsSpellUsable", forever)
+        self.assertIn("local active, onGCD = info.isActive, info.isOnGCD", forever)
+        self.assertIn("function API.ReadWeaponEnchantInfo()", forever)
+        self.assertIn("items.GetWeaponEnchantInfo", forever)
+        self.assertNotIn("info.startTime", forever)
+        self.assertNotIn("info.duration", forever)
+        self.assertIn('"Show Overpower Window", "warriorOverpowerIndicator"', options)
+        self.assertIn("local nameplateReactiveIndicator =", options)
+        self.assertNotIn('Header(c, y, "Class Text")', options)
+        self.assertNotIn('Header(c, y, "Buff Reminders")', options)
+        self.assertNotIn('Header(c, y, "Overpower Reminder")', options)
+        self.assertNotIn('"Enable missing-buff reminders", "classBuffEnabled"', options)
+        self.assertNotIn('ns.Opt("classBuffEnabled"', class_buffs)
+        self.assertLess(
+            options.index('"Show Overpower Window", "warriorOverpowerIndicator"'),
+            options.index('"Show Revenge Window", "classBuffRevenge"'),
+        )
+        self.assertLess(
+            options.index('"Warn Before Expiry (sec)"'),
+            options.index('"Show Overpower Window", "warriorOverpowerIndicator"'),
+        )
+        self.assertLess(
+            options.index('"Show Counterattack Window", "hunterCounterattackIndicator"'),
+            options.index('"Show Mongoose Bite Window", "classBuffMongooseBite"'),
+        )
 
     def test_all_aura_renderers_use_shared_presentation_policy(self) -> None:
         config = (ROOT / "src" / "common" / "Core" / "Config.lua").read_text()
@@ -660,6 +944,62 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
         self.assertIn("local centerAnchor = st and (st.overlay or st.root) or hp", source)
         self.assertIn('SetPoint("BOTTOM", centerAnchor, "CENTER", x, y)', source)
         self.assertIn('SetPoint(point, hp, relativePoint, x, y)', source)
+
+    def test_forever_minimap_can_reach_the_screen_edge_in_edit_mode(self) -> None:
+        defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()
+        config = (ROOT / "src" / "common" / "Core" / "Config.lua").read_text()
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+        interface = (ROOT / "src" / "forever" / "Plus" / "InterfaceTweaks.lua").read_text()
+
+        self.assertIn("unclampMinimap       = false", defaults)
+        self.assertIn('unclampMinimap = "minimap"', config)
+        self.assertIn('["plus.minimapEdgePlacement"]', client)
+        self.assertIn('Override("plus.minimapEdgePlacement", "adapted", true', client)
+        self.assertIn('ClientFeatureAvailable("plus.minimapEdgePlacement", false)', options)
+        self.assertIn('"Allow minimap art to reach the screen edge"', options)
+        self.assertIn("local function ApplyMinimapEdgePlacement()", interface)
+        self.assertIn("cluster:SetClampedToScreen(false)", interface)
+        self.assertIn('hooksecurefunc, cluster, "AnchorSelectionFrame"', interface)
+        self.assertIn('OnAddonReady("Blizzard_EditMode", ApplyMinimapEdgePlacement)', interface)
+
+    def test_minimap_button_drag_matches_libdbicon_coordinate_math(self) -> None:
+        source = (ROOT / "src" / "common" / "MinimapButton.lua").read_text()
+        self.assertIn("local math_atan2  = math.atan2", source)
+        self.assertIn("local scale  = Minimap:GetEffectiveScale()", source)
+        self.assertIn("px, py = px / scale, py / scale", source)
+        self.assertIn("math_deg(math_atan2(py - my, px - mx)) % 360", source)
+        self.assertNotIn("DRAG_SENSITIVITY", source)
+        self.assertNotIn("local atan2       = atan2", source)
+
+    def test_forever_recipe_toast_mover_owns_only_the_alert_base_anchor(self) -> None:
+        defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        movers = (ROOT / "src" / "common" / "Movers" / "Systems.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+
+        self.assertIn("AlertToasts       = { enabled = true", defaults)
+        self.assertIn('["movers.alertToasts"]', client)
+        self.assertIn('Override("movers.alertToasts", "adapted", true', client)
+        self.assertIn('local frame = _G.AlertFrame', movers)
+        self.assertIn('self:RegisterElement("AlertToasts", frame', movers)
+        self.assertIn('label = "Recipe / Alert Toasts"', movers)
+        self.assertNotIn("NewRecipeLearnedAlertSystem.alertFramePool:Acquire", movers)
+        self.assertIn('ClientFeatureAvailable("movers.alertToasts", false)', options)
+        self.assertIn('{ "Recipe / Alert Toasts", "AlertToasts" }', options)
+
+    def test_grocery_launcher_size_updates_button_border_and_mover(self) -> None:
+        defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()
+        grocery = (ROOT / "src" / "common" / "Inventory" / "Grocery.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+
+        self.assertIn("groceryButtonSize  = 32", defaults)
+        self.assertIn('"Grocery Button Icon Size", "groceryButtonSize", 16, 64, 1', options)
+        self.assertIn('ns.Opt("groceryButtonSize", 32)', grocery)
+        self.assertIn("launcher:SetSize(size, size)", grocery)
+        self.assertIn("launcher.border:SetSize(size * (58 / 32), size * (58 / 32))", grocery)
+        self.assertIn("overlayWidth = size", grocery)
+        self.assertIn("overlayHeight = size", grocery)
 
 
 if __name__ == "__main__":

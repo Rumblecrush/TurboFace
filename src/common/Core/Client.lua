@@ -94,7 +94,6 @@ Client.developmentRestrictedSettings = isForever and {
 Client.developmentRestrictedGates = isForever and {
     unitframes = "unitframes.master",
     castBars = "castbars.master",
-    class = "class.master",
 } or {}
 
 function Client:IsDevBypassActive()
@@ -212,10 +211,13 @@ local FEATURES = {
     ["hud.spendTalentPoint"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic retains the ClassBuffs unspent-talent icon reminder"),
     ["plus.questLevels"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace quest-level prefix and difficulty tags"),
     ["plus.combinedBagMovable"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic uses separate bag-window ownership"),
+    ["plus.minimapEdgePlacement"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic does not use the Forever Edit Mode minimap cluster"),
+    ["movers.alertToasts"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic does not expose the Forever pooled alert-toast stack"),
     ["plus.vendorPrice"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace vendor-price tooltip augmentation"),
     ["combat.classBuffTalentReminder"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "Classic ClassBuffs unspent-talent icon reminder"),
     ["combat.reactiveNameplateIndicator"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "Classic reactive ability indicator on Era nameplates"),
     ["combat.localMeterWindow"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace CLEU Combat Meter window"),
+    ["combat.leashTimer"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "GUID-authoritative Classic enemy leash estimator"),
     ["nameplates.nameTextShadow"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace native-name FontObject amendment"),
     ["plus.mapEnhancedZoom"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace windowed-map zoom amendment"),
     ["plus.mapRememberZoom"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace windowed-map pan/zoom persistence"),
@@ -246,10 +248,13 @@ if isForever then
     Override("hud.spendTalentPoint", "adapted", true, VALIDATION.LIVE_VALIDATED, "forever", "Standalone Speedrun text reminder replaces the Classic ClassBuffs icon reminder")
     Override("plus.questLevels", "blizzard-owned", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Forever owns quest-level presentation natively; TurboFace retains difficulty tags only")
     Override("plus.combinedBagMovable", "adapted", true, VALIDATION.LIVE_VALIDATED, "forever", "TurboFace can move Blizzard's combined bag through the Forever Interface adapter")
+    Override("plus.minimapEdgePlacement", "adapted", true, VALIDATION.LIVE_PARTIAL, "forever", "TurboFace relaxes Blizzard Edit Mode's MinimapCluster screen clamp while preserving Blizzard anchor persistence")
+    Override("movers.alertToasts", "adapted", true, VALIDATION.LIVE_PARTIAL, "forever", "TurboFace moves Blizzard's stable AlertFrame base anchor while preserving pooled toast ownership")
     Override("plus.vendorPrice", "blizzard-owned", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Forever tooltip ownership replaces TurboFace's legacy vendor-price augmentation")
     Override("combat.classBuffTalentReminder", "adapted", false, VALIDATION.LIVE_VALIDATED, "forever", "Forever owns unspent talent points through the standalone Speedrun text reminder")
     Override("combat.reactiveNameplateIndicator", "blocked", false, VALIDATION.BLOCKED, "none", "Forever pooled CompactUnitFrames forbid the Classic reactive-indicator ownership model")
     Override("combat.localMeterWindow", "blizzard-owned", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Forever uses Blizzard C_DamageMeter; TurboFace retains only the independent DPS/HPS badge bridge")
+    Override("combat.leashTimer", "blocked", false, VALIDATION.BLOCKED, "none", "Forever withholds readable per-enemy combat-log attribution, so the estimator cannot reset reliably")
     Override("nameplates.nameTextShadow", "blizzard-owned", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Forever's native nameplate name already supplies its own shadow")
     Override("plus.mapEnhancedZoom", "blocked", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Protected MapCanvas/provider/pin ownership remains Blizzard-exclusive")
     Override("plus.mapRememberZoom", "blocked", false, VALIDATION.LIVE_VALIDATED, "blizzard", "TurboFace does not sample or restore protected Forever MapCanvas pan/zoom state")

@@ -66,7 +66,7 @@ local function BuildData()
     SetModule(data, "playerTicks", true)
     SetModule(data, "swingTimers", false)
     SetModule(data, "castBars", false)
-    SetModule(data, "class", false)
+    SetModule(data, "class", true)
     data.modules.plus = {
         enabled = true, automation = true, social = false, interface = true,
         minimap = false, chat = true, system = true, flightBar = true, map = true,

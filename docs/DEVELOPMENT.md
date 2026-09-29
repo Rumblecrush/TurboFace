@@ -73,4 +73,6 @@ After structural or runtime changes:
 5. Update the applicable architecture, source map, and changelog documents.
 
 See the [multi-client strategy](MULTICLIENT_STRATEGY.md) for ownership details
-and the [release guide](RELEASING.md) for publication.
+and the [development-to-CurseForge workflow](DEV_TO_CURSEFORGE.md) for the full
+branch, pull-request, tag, GitHub Release, and CurseForge path. The
+[release guide](RELEASING.md) remains the concise publication checklist.

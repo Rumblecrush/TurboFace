@@ -4,8 +4,9 @@ local _, ns = ...
 -- TurboFace Enemy Leash Timer
 --
 -- GUID-authoritative leash countdowns for hostile NPCs engaged with the player.
--- Threat/nameplate/target events provide identity + level while
--- the shared CLEU dispatcher provides authoritative interaction timestamps.
+-- Threat/nameplate/target events provide identity + level. Classic's shared
+-- CLEU dispatcher supplies authoritative interaction timestamps; Forever uses
+-- readable player spellcast/damage/death events when public CLEU is absent.
 --
 -- Design goals:
 --   * no private COMBAT_LOG_EVENT_UNFILTERED frame (uses ns.CLEU)
@@ -20,22 +21,23 @@ local _, ns = ...
 local LT = {}
 ns.LeashTimer = LT
 
+local API = ns.API
 local CreateFrame = CreateFrame
 local GetTime = GetTime
-local UnitExists = UnitExists
-local UnitGUID = UnitGUID
-local UnitName = UnitName
-local UnitLevel = UnitLevel
-local UnitClassification = UnitClassification
-local UnitCanAttack = UnitCanAttack
-local UnitIsPlayer = UnitIsPlayer
-local UnitIsDead = UnitIsDead
-local UnitAffectingCombat = UnitAffectingCombat
-local UnitIsUnit = UnitIsUnit
-local UnitDetailedThreatSituation = ns.API.ReadUnitDetailedThreatSituation
-local UnitThreatSituation = ns.API.ReadUnitThreatSituation
-local GetRaidTargetIndex = GetRaidTargetIndex
-local GetUnitSpeed = GetUnitSpeed
+local UnitExists = API.ReadUnitExists
+local UnitGUID = API.ReadUnitGUID
+local UnitName = API.ReadUnitName
+local UnitLevel = API.ReadUnitLevel
+local UnitClassification = API.ReadUnitClassification
+local UnitCanAttack = API.ReadUnitCanAttack
+local UnitIsPlayer = API.ReadUnitIsPlayer
+local UnitIsDead = API.ReadUnitIsDead
+local UnitAffectingCombat = API.ReadUnitAffectingCombat
+local UnitIsUnit = API.ReadUnitIsUnit
+local UnitDetailedThreatSituation = API.ReadUnitDetailedThreatSituation
+local UnitThreatSituation = API.ReadUnitThreatSituation
+local GetRaidTargetIndex = API.ReadRaidTargetIndex
+local GetUnitSpeed = API.ReadUnitSpeed
 local math_max = math.max
 local string_format = string.format
 local table_sort = table.sort
@@ -43,7 +45,6 @@ local wipe = wipe
 local bit_band = bit and bit.band
 
 local DB = ns.DB
-local API = ns.API
 
 local FALLBACK_POINT = { "CENTER", UIParent, "CENTER", 320, 40 }
 local DISPLAY_WIDTH = 280
@@ -116,6 +117,9 @@ local playerCombatStartedAt = 0
 
 local function FeatureEnabled()
     -- Runtime activation is controlled by the feature option and Movers gate.
+    if ns.FeatureAvailable and ns.FeatureAvailable("combat.leashTimer", true) == false then
+        return false
+    end
     local on = DB().leashTimerEnabled == true
     return ns.MoverDependentEnabled(on)
 end
@@ -176,9 +180,9 @@ end
 
 local function IsHostileNPCUnit(unit)
     return unit and UnitExists(unit)
-        and not UnitIsPlayer(unit)
-        and UnitCanAttack("player", unit)
-        and not UnitIsDead(unit)
+        and UnitIsPlayer(unit) == false
+        and UnitCanAttack("player", unit) == true
+        and UnitIsDead(unit) == false
 end
 
 local function PlayerHasThreat(unit)
@@ -217,7 +221,7 @@ end
 
 local function ExplicitlyDisengaged(unit)
     if not unit or not UnitExists(unit) then return true end
-    if UnitAffectingCombat and not UnitAffectingCombat(unit) then return true end
+    if UnitAffectingCombat and UnitAffectingCombat(unit) == false then return true end
     if PlayerHasThreat(unit) then return false end
 
     -- A concrete victim other than the player plus no player threat is strong
@@ -225,7 +229,7 @@ local function ExplicitlyDisengaged(unit)
     -- data is treated as unknown, not as permission to destroy a live timer.
     if UnitIsUnit then
         local victim = unit .. "target"
-        if UnitExists(victim) and not UnitIsUnit(victim, "player") then return true end
+        if UnitExists(victim) and UnitIsUnit(victim, "player") == false then return true end
     end
     return false
 end
@@ -279,7 +283,9 @@ local function ObserveUnitCombat(unit)
     local guid = UnitGUID(unit)
     if not guid then return false, false end
 
-    local current = UnitAffectingCombat(unit) == true
+    local observed = UnitAffectingCombat(unit)
+    if observed == nil then return false, false end
+    local current = observed == true
     local previous = combatByGUID[guid]
     if previous == nil then
         -- First sight is only a baseline. An NPC that merely appears already in
@@ -580,11 +586,11 @@ end
 
 local function SeedVisibleNameplates()
     if not C_NamePlate or not C_NamePlate.GetNamePlates then return end
-    local plates = C_NamePlate.GetNamePlates()
-    if type(plates) ~= "table" then return end
+    local ok, plates = pcall(C_NamePlate.GetNamePlates)
+    if not ok or type(plates) ~= "table" or (API.CanAccessValue and not API.CanAccessValue(plates)) then return end
     for i = 1, #plates do
         local unit = plates[i] and plates[i].unitToken
-        if unit then
+        if unit and (not API.CanAccessValue or API.CanAccessValue(unit)) then
             RememberNameplate(unit)
             ObserveUnitCombat(unit)
         end
@@ -663,7 +669,7 @@ local function ExpireStates(now)
                 -- eligible for real-reset cleanup once they have crossed zero.
                 -- Require stable disengagement so one transient API sample does
                 -- not tear down an overtime row.
-                if UnitAffectingCombat and not UnitAffectingCombat(unit) then
+                if UnitAffectingCombat and UnitAffectingCombat(unit) == false then
                     state.outOfCombatSince = state.outOfCombatSince or now
                 else
                     state.outOfCombatSince = nil
@@ -674,7 +680,7 @@ local function ExpireStates(now)
                     if PlayerEngagedWith(unit) then
                         state.disengageSince = nil
                         state.outOfCombatSince = nil
-                    elseif (UnitAffectingCombat and not UnitAffectingCombat(unit))
+                    elseif (UnitAffectingCombat and UnitAffectingCombat(unit) == false)
                         or ExplicitlyDisengaged(unit) then
                         remove = true
                     else
@@ -798,6 +804,14 @@ local function OnCombatLog(e)
     local subevent = e[2]
     local sourceGUID, sourceFlags = e[4], e[6]
     local destGUID, destName, destFlags = e[8], e[9], e[10]
+    if API.CanAccessValue then
+        if not API.CanAccessValue(subevent) or not API.CanAccessValue(sourceGUID)
+            or not API.CanAccessValue(sourceFlags) or not API.CanAccessValue(destGUID)
+            or not API.CanAccessValue(destFlags) then
+            return
+        end
+        if not API.CanAccessValue(destName) then destName = nil end
+    end
     local now = GetTime()
 
     if subevent == "UNIT_DIED" or subevent == "UNIT_DESTROYED" then
@@ -813,7 +827,9 @@ local function OnCombatLog(e)
     end
 
     if subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_REMOVED" then
-        if IsHostileNPCFlags(destFlags) and HandleCC(subevent, destGUID, e[13]) then return end
+        local spellName = e[13]
+        if API.CanAccessValue and not API.CanAccessValue(spellName) then return end
+        if IsHostileNPCFlags(destFlags) and HandleCC(subevent, destGUID, spellName) then return end
         return
     end
 
@@ -824,6 +840,7 @@ local function OnCombatLog(e)
         elseif subevent == "RANGE_MISSED" or subevent == "SPELL_MISSED" then
             missType = e[15]
         end
+        if API.CanAccessValue and not API.CanAccessValue(missType) then return end
 
         -- EVADE is the combat log's explicit per-GUID reset result. It must
         -- destroy only this mob's state even while another mob keeps the player
@@ -858,9 +875,9 @@ local function OnCombatLog(e)
         and IsHostileNPCFlags(sourceFlags) and not ccCounts[sourceGUID] then
         local unit = ResolveUnit(sourceGUID)
         if unit and IsHostileNPCUnit(unit) then
-            local mobSpeed = GetUnitSpeed and GetUnitSpeed(unit) or 0
-            local playerSpeed = GetUnitSpeed and GetUnitSpeed("player") or 0
-            if mobSpeed == 0 and playerSpeed == 0 then
+            local mobSpeed = GetUnitSpeed and GetUnitSpeed(unit)
+            local playerSpeed = GetUnitSpeed and GetUnitSpeed("player")
+            if mobSpeed ~= nil and playerSpeed ~= nil and mobSpeed == 0 and playerSpeed == 0 then
                 -- Being struck by this GUID is already authoritative engagement.
                 StartState(sourceGUID, unit, now, false, UnitName(unit))
             end
@@ -868,7 +885,47 @@ local function OnCombatLog(e)
     end
 end
 
-local function OnEvent(_, event, unit)
+local function RemoveTargetState()
+    local changed = false
+    local guid = UnitGUID and UnitGUID("target")
+    if guid then
+        ccCounts[guid] = nil
+        pendingCLEU[guid] = nil
+        changed = RemoveState(guid) or changed
+    end
+    for stateGUID, state in pairs(states) do
+        if state and state.unit == "target" then
+            ccCounts[stateGUID] = nil
+            pendingCLEU[stateGUID] = nil
+            changed = RemoveState(stateGUID) or changed
+        end
+    end
+    if changed then
+        SyncCadence()
+        UpdateDisplay(true)
+    end
+end
+
+local function ResetSingleEngagedState(timestamp)
+    local foundGUID, foundUnit
+    for guid in pairs(states) do
+        local unit = ResolveUnit(guid)
+        if unit and IsHostileNPCUnit(unit) and PlayerEngagedWith(unit) then
+            if foundGUID then return false end
+            foundGUID, foundUnit = guid, unit
+        end
+    end
+    if not foundGUID then return false end
+    StartState(foundGUID, foundUnit, timestamp or GetTime(), false, UnitName(foundUnit))
+    return true
+end
+
+local function IsReadableNameplateToken(unit)
+    return (not API.CanAccessValue or API.CanAccessValue(unit))
+        and type(unit) == "string" and unit:find("nameplate", 1, true) == 1
+end
+
+local function OnEvent(_, event, unit, arg2, arg3)
     if event == "PLAYER_ENTERING_WORLD" then
         playerGUID = UnitGUID("player")
         playerInCombat = PlayerIsInCombat()
@@ -902,6 +959,32 @@ local function OnEvent(_, event, unit)
         return
     end
 
+    if event == "PLAYER_TARGET_DIED" then
+        RemoveTargetState()
+        return
+    end
+
+    if event == "UNIT_COMBAT" then
+        if unit == "player" and playerInCombat then
+            RefreshAllVisibleEngagement(true)
+            -- Midnight keeps damage taken readable but withholds attacker
+            -- identity. Reset only when exactly one engaged tracked GUID makes
+            -- attribution unambiguous.
+            if arg2 == "WOUND" then ResetSingleEngagedState(GetTime()) end
+        end
+        return
+    end
+
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if unit == "player" and playerInCombat and API.IsSpellHarmful
+            and API.IsSpellHarmful(arg3) == true and IsHostileNPCUnit("target")
+            and PlayerEngagedWith("target") then
+            local guid = UnitGUID("target")
+            if guid then StartState(guid, "target", GetTime(), false, UnitName("target")) end
+        end
+        return
+    end
+
     if event == "NAME_PLATE_UNIT_ADDED" then
         local guid = RememberNameplate(unit)
         ObserveUnitCombat(unit)
@@ -931,7 +1014,7 @@ local function OnEvent(_, event, unit)
 
     if event == "UNIT_TARGET" or event == "UNIT_FLAGS" then
         if not unit then return end
-        if unit:find("nameplate", 1, true) == 1 then
+        if IsReadableNameplateToken(unit) then
             RememberNameplate(unit)
             if event == "UNIT_FLAGS" then ObserveUnitCombat(unit) end
             if playerInCombat then
@@ -946,7 +1029,7 @@ local function OnEvent(_, event, unit)
 
     if event == "UNIT_THREAT_LIST_UPDATE" or event == "UNIT_THREAT_SITUATION_UPDATE" then
         if not playerInCombat then return end
-        if unit and unit:find("nameplate", 1, true) == 1 then
+        if IsReadableNameplateToken(unit) then
             RefreshEngagementForUnit(unit, true)
         else
             -- Blizzard may report the actor (often "player") rather than the
@@ -963,17 +1046,20 @@ local function SetEvents(active)
     if not eventFrame then return end
     eventFrame:UnregisterAllEvents()
     if not active then return end
-    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-    eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
-    eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-    eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
-    eventFrame:RegisterEvent("UNIT_TARGET")
-    eventFrame:RegisterEvent("UNIT_FLAGS")
-    eventFrame:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
-    eventFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+    API.RegisterEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+    API.RegisterEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+    API.RegisterEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    API.RegisterEvent(eventFrame, "NAME_PLATE_UNIT_ADDED")
+    API.RegisterEvent(eventFrame, "NAME_PLATE_UNIT_REMOVED")
+    API.RegisterEvent(eventFrame, "PLAYER_TARGET_CHANGED")
+    API.RegisterEvent(eventFrame, "PLAYER_FOCUS_CHANGED")
+    API.RegisterEvent(eventFrame, "PLAYER_TARGET_DIED")
+    API.RegisterEvent(eventFrame, "UNIT_TARGET")
+    API.RegisterEvent(eventFrame, "UNIT_FLAGS")
+    API.RegisterEvent(eventFrame, "UNIT_THREAT_LIST_UPDATE")
+    API.RegisterEvent(eventFrame, "UNIT_THREAT_SITUATION_UPDATE")
+    API.RegisterUnitEvent(eventFrame, "UNIT_COMBAT", "player")
+    API.RegisterUnitEvent(eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
 end
 
 local function ActivateRuntime()

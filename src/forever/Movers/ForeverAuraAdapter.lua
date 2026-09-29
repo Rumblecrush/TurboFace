@@ -137,12 +137,21 @@ local function InitializeButton(controller, button)
         timer:Hide()
     end
 
+    -- Match ForeverNameplates/ForeverAuras exactly: center an explicitly sized
+    -- UI-Debuff-Overlays ring around the icon. The previous four-corner
+    -- anchors were geometrically close, but target aura sizes can be
+    -- fractional after applying auraTargetDebuffScale (1.35 is common). That
+    -- made opposite edges round independently and the target ring could look
+    -- softer or thicker than the nameplate ring.
     local border = button:CreateTexture(nil, "OVERLAY")
     border:SetTexture(BORDER_TEXTURE)
     border:SetTexCoord(unpack(BORDER_COORDS))
-    border:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
-    if controller.helpful then border:SetVertexColor(1, 1, 1, 1) end
+    border:SetPoint("CENTER")
+    border:SetSize(controller.iconSize + 2, controller.iconSize + 2)
+    border:SetVertexColor(controller.helpful and 1 or 0.8,
+        controller.helpful and 1 or 0,
+        controller.helpful and 1 or 0, 1)
+    button.Border = border
 
     local styleEnum = Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
     if type(button.SetAuraBorder) == "function" and styleEnum and styleEnum.PreserveAsset then

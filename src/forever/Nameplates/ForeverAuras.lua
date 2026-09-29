@@ -223,10 +223,28 @@ local function InitializeAuraButton(controller, button)
     StyleButton(controller, button)
 end
 
-local function CreateController(st, kind)
+local function ControllerSignature(kind)
+    local isDebuff = kind == "debuff"
+    local presentation = ns.AuraPresentation and ns.AuraPresentation:GetSignature() or "default"
+    local width = tonumber(isDebuff and ns.c_debuffIconWidth or ns.c_buffIconWidth) or 20
+    local height = tonumber(isDebuff and ns.c_debuffIconHeight or ns.c_buffIconHeight) or width
+    local maximum = tonumber(isDebuff and ns.c_maxDebuffs or ns.c_maxBuffs) or 4
+    local spacing = tonumber(isDebuff and ns.c_iconSpacing or ns.c_buffIconSpacing) or 2
+    local growth = isDebuff and ns.c_growDirection or ns.c_buffGrowDirection
+    local x = tonumber(isDebuff and ns.c_debuffXOffset or ns.c_buffXOffset) or 0
+    local y = tonumber(isDebuff and ns.c_debuffYOffset or ns.c_buffYOffset) or 0
+    local filter = isDebuff and "HARMFUL" or ns.c_buffFilterMode
+    local minimum = tonumber(isDebuff and ns.c_minDuration or ns.c_buffMinDuration) or 0
+    local maximumDuration = tonumber(isDebuff and ns.c_maxDuration or ns.c_buffMaxDuration) or 0
+    local debuffHeight = not isDebuff and tonumber(ns.c_debuffIconHeight) or 0
+    return table.concat({presentation, width, height, maximum, spacing, growth or "CENTER",
+        x, y, filter or "", minimum, maximumDuration, debuffHeight or 0}, ":")
+end
+
+local function CreateController(st, kind, signature)
     local controller = {
         kind = kind, buttons = {}, groups = {},
-        styleSignature = ns.AuraPresentation and ns.AuraPresentation:GetSignature() or "default",
+        styleSignature = signature or ControllerSignature(kind),
     }
     local ok, container = pcall(CreateFrame, "AuraContainer", nil, UIParent,
         "CustomAuraContainerTemplate")
@@ -249,14 +267,14 @@ end
 local function EnsureController(st, kind)
     local key = kind .. "Auras"
     local controller = st[key]
-    local signature = ns.AuraPresentation and ns.AuraPresentation:GetSignature() or "default"
+    local signature = ControllerSignature(kind)
     if controller and controller.styleSignature ~= signature then
         Safe(kind .. " restyle-disable", controller.frame, "SetEnabled", false)
         controller.frame:Hide()
         st[key] = nil
         controller = nil
     end
-    return controller or CreateController(st, kind)
+    return controller or CreateController(st, kind, signature)
 end
 
 local function Direction(grow)
