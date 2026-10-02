@@ -95,6 +95,15 @@ local SetCVarCompat = API.SetCVar
 local GetCVarCompat = API.GetCVar
 local GetActionBarTogglesCompat = API.GetActionBarToggles
 local SetActionBarTogglesCompat = API.SetActionBarToggles
+local IsMouseoverCastSupportedCompat = API.IsMouseoverCastSupported
+local GetModifiedClickCompat = API.GetModifiedClick
+local SetModifiedClickCompat = API.SetModifiedClick
+local GetCurrentBindingSetCompat = API.GetCurrentBindingSet
+local SaveBindingsCompat = API.SaveBindings
+local GetNumMinimapTrackingTypesCompat = API.GetNumMinimapTrackingTypes
+local GetMinimapTrackingFilterCompat = API.GetMinimapTrackingFilter
+local SetMinimapTrackingCompat = API.SetMinimapTracking
+local IsMinimapTrackingFilteredOutCompat = API.IsMinimapTrackingFilteredOut
 local MAX_ACCOUNT_MACROS_COMPAT = _G.MAX_ACCOUNT_MACROS or 120
 local MAX_CHARACTER_MACROS_COMPAT = _G.MAX_CHARACTER_MACROS or 18
 if QuickPolicy("modernMacroLimits") and type(API.GetMacroLimits) == "function" then
@@ -111,6 +120,21 @@ local ACTION_BAR_SETTING_KEYS = {
     [8] = "PROXY_SHOW_ACTIONBAR_8",
 }
 
+local MOUSEOVER_CAST_MODIFIERS = {
+    NONE = true,
+    ALT = true,
+    CTRL = true,
+    SHIFT = true,
+}
+
+local MAP_QUEST_LOG_CVARS = {
+    { field = "questObjectives", cvar = "questPOI", label = "Quest Objectives" },
+    { field = "questLevels", cvar = "showQuestLevel", label = "Show Quest Levels" },
+    { field = "questDifficultyColor", cvar = "showQuestDifficultyColor", label = "Quest Difficulty Color" },
+    { field = "instanceEntrances", cvar = "showDungeonEntrancesOnMap", label = "Instance Entrances" },
+    { field = "trackedItems", cvar = "contentTrackingFilter", label = "Tracked Items" },
+}
+
 local sessionActionBarOverrides = {}
 local sessionActionBarDriverFrames = {}
 local restoreRuntimeActive = false
@@ -123,6 +147,14 @@ local ApplyEditModeLayout
 local ApplyPendingEditModeLayout
 local pendingEditModeLayout
 local editModeRetryScheduled = false
+local pendingMapFilterProfile
+local mapFilterHookInstalled = false
+local mapToggleHooksInstalled = false
+local mapFilterFailureReported = false
+local mapFilterRetryCount = 0
+local MAX_MAP_FILTER_RETRIES = 3
+local ShowMapFilterHardwarePrompt
+local mapFilterPromptFrame
 
 -- Automatic login restoration is intentionally spread across frames. Action placement,
 -- binding mutation, and other UI work can become expensive when many addons initialize
@@ -268,6 +300,18 @@ local function GetSavedEditModeLayout(profileToken)
     local profile = GetClassProfile(profileToken)
     local blizzard = profile and profile.blizzard
     return blizzard and blizzard.editModeLayout
+end
+
+local function GetSavedMouseoverCastOptions(profileToken)
+    local profile = GetClassProfile(profileToken)
+    local blizzard = profile and profile.blizzard
+    return blizzard and blizzard.mouseoverCast
+end
+
+local function GetSavedMapQuestLogOptions(profileToken)
+    local profile = GetClassProfile(profileToken)
+    local blizzard = profile and profile.blizzard
+    return blizzard and blizzard.mapQuestLog
 end
 
 local function GetEditModePresetCount()
@@ -584,6 +628,161 @@ local function ReadCurrentActionBarOptions()
 	return values, count
 end
 
+local function NormalizeMouseoverCastModifier(value)
+    if value == nil then return "NONE" end
+    if type(value) ~= "string" then return nil end
+    value = value:upper()
+    return MOUSEOVER_CAST_MODIFIERS[value] and value or nil
+end
+
+local function ReadCurrentMouseoverCastOptions()
+    if not APIAvailable("GetCVar") or not APIAvailable("GetModifiedClick") then return nil end
+    if APIAvailable("IsMouseoverCastSupported") then
+        local ok, supported = pcall(IsMouseoverCastSupportedCompat)
+        if ok and supported ~= true then return nil end
+    end
+
+    local enabledOK, enabledValue = pcall(GetCVarCompat, "enableMouseoverCast")
+    if not enabledOK then return nil end
+    local enabled = NormalizeBoolean(enabledValue)
+    if enabled == nil then return nil end
+
+    local modifierOK, modifierValue = pcall(GetModifiedClickCompat, "MOUSEOVERCAST")
+    if not modifierOK then return nil end
+    local modifier = NormalizeMouseoverCastModifier(modifierValue)
+    if not modifier then return nil end
+
+    return { enabled = enabled, modifier = modifier }
+end
+
+local function GetTrivialQuestTrackingFilterID()
+    local filters = Enum and Enum.MinimapTrackingFilter
+    return filters and filters.TrivialQuests
+end
+
+local function FindMinimapTrackingFilterIndex(filterID)
+    if filterID == nil or not APIAvailable("GetNumMinimapTrackingTypes")
+        or not APIAvailable("GetMinimapTrackingFilter") then
+        return nil
+    end
+    local countOK, count = pcall(GetNumMinimapTrackingTypesCompat)
+    count = countOK and tonumber(count) or nil
+    if not count then return nil end
+    for index = 1, count do
+        local filterOK, filter = pcall(GetMinimapTrackingFilterCompat, index)
+        if filterOK and type(filter) == "table" and filter.filterID == filterID then return index end
+    end
+    return nil
+end
+
+-- The Map Filter dropdown owns WorldMapFilterMixin instances. Prefer those objects when
+-- the World Map has loaded: besides changing the backing value, this follows Blizzard's
+-- current routing for minimap-backed filters such as Low-Level Quests. The CVar and
+-- C_Minimap paths below remain available for login restores before the map UI exists.
+local function GetWorldMapFilter(filterKey)
+    local worldMap = _G.WorldMapFrame
+    local button = worldMap and worldMap.WorldMapTrackingOptionsButton
+    if not button or type(button.GetWorldMapFilter) ~= "function" then return nil end
+    local ok, filter = pcall(button.GetWorldMapFilter, button, filterKey)
+    if not ok or type(filter) ~= "table" then return nil end
+    return filter
+end
+
+local function ReadWorldMapFilter(filterKey)
+    local filter = GetWorldMapFilter(filterKey)
+    if not filter or type(filter.Get) ~= "function" then return nil end
+    local ok, value = pcall(filter.Get, filter)
+    value = ok and NormalizeBoolean(value) or nil
+    return value
+end
+
+local function SetWorldMapFilter(filterKey, desired)
+    local filter = GetWorldMapFilter(filterKey)
+    if not filter or type(filter.Set) ~= "function" then return false end
+    if type(securecallfunction) == "function" then
+        -- Some Forever CVars (notably questPOI) reject a write made directly from
+        -- addon execution even though Blizzard's own WorldMapFilterMixin owns the setter.
+        -- Calling that Blizzard method through the secure boundary preserves its context.
+        local ok = pcall(securecallfunction, filter.Set, filter, desired)
+        if ok and ReadWorldMapFilter(filterKey) == desired then return true end
+    end
+    -- showQuestLevel behaves inversely on Forever: its normal native setter succeeds where
+    -- the secure-call path can leave it unchanged. Verify both paths independently.
+    local ok = pcall(filter.Set, filter, desired)
+    return ok and ReadWorldMapFilter(filterKey) == desired
+end
+
+local function ReadMapQuestLogCVar(entry)
+    local value = ReadWorldMapFilter(entry.cvar)
+    if value ~= nil then return value end
+    if not APIAvailable("GetCVar") then return nil end
+    local ok, rawValue = pcall(GetCVarCompat, entry.cvar)
+    return ok and NormalizeBoolean(rawValue) or nil
+end
+
+local function ReadLowLevelQuestFilter()
+    local value = ReadWorldMapFilter("trivialQuests")
+    if value ~= nil then return value end
+    local filterID = GetTrivialQuestTrackingFilterID()
+    if filterID == nil or not APIAvailable("IsMinimapTrackingFilteredOut") then return nil end
+    local ok, filteredOut = pcall(IsMinimapTrackingFilteredOutCompat, filterID)
+    if ok and type(filteredOut) == "boolean" then return not filteredOut end
+    return nil
+end
+
+local function SetMapQuestLogCVar(entry, desired)
+    if SetWorldMapFilter(entry.cvar, desired) then return true end
+    if not APIAvailable("SetCVar") then return false end
+    local rawValue = desired and "1" or "0"
+    if type(securecallfunction) == "function" then
+        local ok, changed = pcall(securecallfunction, SetCVarCompat, entry.cvar, rawValue)
+        if ok and changed ~= false and ReadMapQuestLogCVar(entry) == desired then return true end
+    end
+    local ok, changed = pcall(SetCVarCompat, entry.cvar, rawValue)
+    if ok and changed ~= false and ReadMapQuestLogCVar(entry) == desired then return true end
+    if type(ConsoleExec) == "function" then
+        -- ConsoleExec is a separate native CVar path and remains useful on client builds
+        -- where C_CVar.SetCVar rejects a temporarily locked character CVar.
+        ok = pcall(ConsoleExec, entry.cvar .. " " .. rawValue)
+        if ok and ReadMapQuestLogCVar(entry) == desired then return true end
+    end
+    return false
+end
+
+local function SetLowLevelQuestFilter(desired)
+    if SetWorldMapFilter("trivialQuests", desired) then return true end
+    local minimapUtil = _G.MinimapUtil
+    if minimapUtil and type(minimapUtil.SetTrackingFilterByFilterID) == "function" then
+        local filterID = GetTrivialQuestTrackingFilterID()
+        local ok = filterID ~= nil
+            and pcall(minimapUtil.SetTrackingFilterByFilterID, filterID, desired)
+        if ok and ReadLowLevelQuestFilter() == desired then return true end
+    end
+    if not APIAvailable("SetMinimapTracking") then return false end
+    local filterIndex = FindMinimapTrackingFilterIndex(GetTrivialQuestTrackingFilterID())
+    local ok = filterIndex and pcall(SetMinimapTrackingCompat, filterIndex, desired)
+    return ok and ReadLowLevelQuestFilter() == desired
+end
+
+local function ReadCurrentMapQuestLogOptions()
+    local values = {}
+    local count = 0
+    for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+        local value = ReadMapQuestLogCVar(entry)
+        if value ~= nil then
+            values[entry.field] = value
+            count = count + 1
+        end
+    end
+
+    local lowLevelQuests = ReadLowLevelQuestFilter()
+    if lowLevelQuests ~= nil then
+        values.lowLevelQuests = lowLevelQuests
+        count = count + 1
+    end
+    return count > 0 and values or nil, count
+end
+
 -- Blizzard's live Settings proxy is intentionally never written by Quick Setup.
 -- Even when routed through securecallfunction(), addon-driven Settings.SetValue can
 -- leave the native ActionBarMixin update path tainted and later block protected
@@ -663,89 +862,363 @@ local function SaveBlizzardOptions(profile)
     local storedProfile = EnsureClassProfile(profile)
     storedProfile.blizzard = storedProfile.blizzard or {}
     storedProfile.blizzard.actionBars = actionBars
+    local mouseoverCast = ReadCurrentMouseoverCastOptions()
+    storedProfile.blizzard.mouseoverCast = mouseoverCast
+    if mouseoverCast then count = count + 2 end
+    local mapQuestLog, mapQuestLogCount = ReadCurrentMapQuestLogOptions()
+    storedProfile.blizzard.mapQuestLog = mapQuestLog
+    count = count + mapQuestLogCount
     return count
+end
+
+local function ApplyMouseoverCastOptions(profile, result)
+    local saved = GetSavedMouseoverCastOptions(profile)
+    if type(saved) ~= "table" then return end
+    local desiredEnabled = NormalizeBoolean(saved.enabled)
+    local desiredModifier = NormalizeMouseoverCastModifier(saved.modifier)
+    if desiredEnabled == nil or not desiredModifier then
+        result.failed = result.failed + 2
+        return
+    end
+
+    result.stored = result.stored + 2
+    if InCombatLockdown and InCombatLockdown() then
+        result.deferred = result.deferred + 2
+        return
+    end
+
+    local current = ReadCurrentMouseoverCastOptions()
+    if not current then
+        result.failed = result.failed + 2
+        return
+    end
+
+    if current.enabled == desiredEnabled then
+        result.matched = result.matched + 1
+    elseif APIAvailable("SetCVar") then
+        local ok = pcall(SetCVarCompat, "enableMouseoverCast", desiredEnabled and "1" or "0")
+        if ok then result.changed = result.changed + 1 else result.failed = result.failed + 1 end
+    else
+        result.failed = result.failed + 1
+    end
+
+    if current.modifier == desiredModifier then
+        result.matched = result.matched + 1
+    elseif APIAvailable("SetModifiedClick") and APIAvailable("SaveBindings") then
+        local ok = pcall(SetModifiedClickCompat, "MOUSEOVERCAST", desiredModifier)
+        if ok then
+            local bindingSet = CHARACTER_BINDINGS or 2
+            if APIAvailable("GetCurrentBindingSet") then
+                local bindingOK, currentBindingSet = pcall(GetCurrentBindingSetCompat)
+                if bindingOK and currentBindingSet ~= nil then bindingSet = currentBindingSet end
+            end
+            ok = pcall(SaveBindingsCompat, bindingSet)
+        end
+        if ok then result.changed = result.changed + 1 else result.failed = result.failed + 1 end
+    else
+        result.failed = result.failed + 1
+    end
+end
+
+local function ApplyMapQuestLogOptions(profile, result)
+    local saved = GetSavedMapQuestLogOptions(profile)
+    if type(saved) ~= "table" then return end
+
+    local stored = 0
+    for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+        if NormalizeBoolean(saved[entry.field]) ~= nil then stored = stored + 1 end
+    end
+    if NormalizeBoolean(saved.lowLevelQuests) ~= nil then stored = stored + 1 end
+    result.stored = result.stored + stored
+    if stored == 0 then return end
+
+    if InCombatLockdown and InCombatLockdown() then
+        result.deferred = result.deferred + stored
+        return
+    end
+
+    local current = ReadCurrentMapQuestLogOptions()
+    current = type(current) == "table" and current or {}
+    for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+        local desired = NormalizeBoolean(saved[entry.field])
+        if desired ~= nil then
+            if current[entry.field] == desired then
+                result.matched = result.matched + 1
+            elseif current[entry.field] == nil then
+                result.failed = result.failed + 1
+            else
+                local ok = SetMapQuestLogCVar(entry, desired)
+                if ok then result.changed = result.changed + 1 else result.failed = result.failed + 1 end
+            end
+        end
+    end
+
+    local desiredLowLevel = NormalizeBoolean(saved.lowLevelQuests)
+    if desiredLowLevel ~= nil then
+        if current.lowLevelQuests == desiredLowLevel then
+            result.matched = result.matched + 1
+        elseif current.lowLevelQuests == nil then
+            result.failed = result.failed + 1
+        else
+            local ok = SetLowLevelQuestFilter(desiredLowLevel)
+            if ok then result.changed = result.changed + 1 else result.failed = result.failed + 1 end
+        end
+    end
+end
+
+local function MapQuestLogFingerprint(profile)
+    local saved = GetSavedMapQuestLogOptions(profile)
+    if type(saved) ~= "table" then return nil end
+    local parts = {}
+    for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+        local value = NormalizeBoolean(saved[entry.field])
+        if value == nil then return nil end
+        parts[#parts + 1] = entry.field .. "=" .. (value and "1" or "0")
+    end
+    local lowLevel = NormalizeBoolean(saved.lowLevelQuests)
+    if lowLevel == nil then return nil end
+    parts[#parts + 1] = "lowLevelQuests=" .. (lowLevel and "1" or "0")
+    return table.concat(parts, ";")
+end
+
+local function ReconcileMapFiltersAfterWorldMapLoad()
+    local profile = pendingMapFilterProfile
+    if not profile then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+
+    local result = { stored = 0, matched = 0, changed = 0, failed = 0, deferred = 0 }
+    ApplyMapQuestLogOptions(profile, result)
+    if result.stored > 0 and result.failed == 0 and result.deferred == 0
+        and (result.matched + result.changed) >= result.stored then
+        CharRoot().mapQuestLogFingerprint = MapQuestLogFingerprint(profile)
+        pendingMapFilterProfile = nil
+        mapFilterFailureReported = false
+        mapFilterRetryCount = 0
+        PrintMessage("Map Filter choices were restored after Blizzard finished initializing the World Map.")
+    elseif mapFilterRetryCount < MAX_MAP_FILTER_RETRIES
+        and C_Timer and type(C_Timer.After) == "function" then
+        mapFilterRetryCount = mapFilterRetryCount + 1
+        C_Timer.After(0.5 * mapFilterRetryCount, ReconcileMapFiltersAfterWorldMapLoad)
+    elseif not mapFilterFailureReported then
+        local saved = GetSavedMapQuestLogOptions(profile) or {}
+        local current = ReadCurrentMapQuestLogOptions()
+        current = type(current) == "table" and current or {}
+        local missing = {}
+        for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+            if NormalizeBoolean(saved[entry.field]) ~= current[entry.field] then
+                missing[#missing + 1] = entry.label
+            end
+        end
+        if NormalizeBoolean(saved.lowLevelQuests) ~= current.lowLevelQuests then
+            missing[#missing + 1] = "Low-Level Quests"
+        end
+        mapFilterFailureReported = true
+        local details = ""
+        if #missing == 1 and missing[1] == "Show Quest Levels"
+            and C_CVar and type(C_CVar.GetCVarInfo) == "function" then
+            local ok, value, _, serverAccount, serverCharacter, locked, secure, readOnly =
+                pcall(C_CVar.GetCVarInfo, "showQuestLevel")
+            if ok then
+                details = " (value=" .. tostring(value)
+                    .. ", serverAccount=" .. tostring(serverAccount)
+                    .. ", serverCharacter=" .. tostring(serverCharacter)
+                    .. ", locked=" .. tostring(locked)
+                    .. ", secure=" .. tostring(secure)
+                    .. ", readOnly=" .. tostring(readOnly) .. ")"
+            end
+        end
+        PrintMessage("Map Filter restore is still blocked for: "
+            .. (#missing > 0 and table.concat(missing, ", ") or "an unreadable native filter")
+            .. details .. ".")
+        if #missing > 0 and ShowMapFilterHardwarePrompt then
+            ShowMapFilterHardwarePrompt(table.concat(missing, ", "))
+        end
+    end
+end
+
+ShowMapFilterHardwarePrompt = function(missingText)
+    if not mapFilterPromptFrame then
+        local frame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        frame:SetSize(430, 165)
+        frame:SetPoint("CENTER")
+        frame:SetFrameStrata("DIALOG")
+        frame:SetClampedToScreen(true)
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 },
+        })
+
+        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -24)
+        title:SetText("TurboFace Quick Setup")
+
+        local message = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        message:SetPoint("TOPLEFT", 28, -54)
+        message:SetPoint("TOPRIGHT", -28, -54)
+        message:SetJustifyH("CENTER")
+        message:SetJustifyV("TOP")
+        frame.message = message
+
+        local apply = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        apply:SetSize(110, 24)
+        apply:SetPoint("BOTTOMRIGHT", frame, "BOTTOM", -6, 22)
+        apply:SetText(APPLY or "Apply")
+        apply:SetScript("OnClick", function()
+            local profile = pendingMapFilterProfile
+            local saved = profile and GetSavedMapQuestLogOptions(profile)
+            if type(saved) == "table" then
+                -- Call the native filter setters directly in this addon-owned button's
+                -- hardware-event stack. This is the exact path proven by mapfilterprobe.
+                for _, entry in ipairs(MAP_QUEST_LOG_CVARS) do
+                    local desired = NormalizeBoolean(saved[entry.field])
+                    if desired ~= nil then SetWorldMapFilter(entry.cvar, desired) end
+                end
+                local desiredLowLevel = NormalizeBoolean(saved.lowLevelQuests)
+                if desiredLowLevel ~= nil then SetWorldMapFilter("trivialQuests", desiredLowLevel) end
+            end
+            mapFilterFailureReported = false
+            mapFilterRetryCount = MAX_MAP_FILTER_RETRIES
+            ReconcileMapFiltersAfterWorldMapLoad()
+            if not pendingMapFilterProfile then frame:Hide() end
+        end)
+
+        local cancel = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        cancel:SetSize(110, 24)
+        cancel:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 6, 22)
+        cancel:SetText(CANCEL or "Cancel")
+        cancel:SetScript("OnClick", function() frame:Hide() end)
+        mapFilterPromptFrame = frame
+    end
+    mapFilterPromptFrame.message:SetText("Forever requires a direct click to restore:\n|cffffd100"
+        .. tostring(missingText or "Map Filter settings") .. "|r")
+    mapFilterPromptFrame:Show()
+end
+
+local function InstallWorldMapFilterHook()
+    if mapFilterHookInstalled then return true end
+    local worldMap = _G.WorldMapFrame
+    local button = worldMap and worldMap.WorldMapTrackingOptionsButton
+    if not button or type(hooksecurefunc) ~= "function" then return false end
+
+    hooksecurefunc(button, "OnShow", function()
+        if not pendingMapFilterProfile then return end
+        -- A zero-delay timer loses the hardware-event authorization carried by the user's
+        -- Map key/click. hooksecurefunc runs here after Blizzard's native OnShow method, so
+        -- reconcile synchronously while that authorization is still present. The live probe
+        -- proved both server-character CVars accept this path and remain stable afterward.
+        ReconcileMapFiltersAfterWorldMapLoad()
+    end)
+    if not mapToggleHooksInstalled then
+        local function ReconcileAfterMapUserAction()
+            if pendingMapFilterProfile then ReconcileMapFiltersAfterWorldMapLoad() end
+        end
+        for _, functionName in ipairs({ "ToggleWorldMap", "ToggleQuestLog", "OpenWorldMap", "OpenQuestLog" }) do
+            if type(_G[functionName]) == "function" then
+                pcall(hooksecurefunc, functionName, ReconcileAfterMapUserAction)
+            end
+        end
+        mapToggleHooksInstalled = true
+    end
+    mapFilterHookInstalled = true
+    if eventFrame then eventFrame:UnregisterEvent("ADDON_LOADED") end
+
+    if button.IsShown and button:IsShown() then
+        if C_Timer and type(C_Timer.After) == "function" then
+            C_Timer.After(0, ReconcileMapFiltersAfterWorldMapLoad)
+        else
+            ReconcileMapFiltersAfterWorldMapLoad()
+        end
+    end
+    return true
+end
+
+local function ArmWorldMapFilterReconciliation(profile)
+    local fingerprint = MapQuestLogFingerprint(profile)
+    if not fingerprint or CharRoot().mapQuestLogFingerprint == fingerprint then return end
+    pendingMapFilterProfile = profile
+    mapFilterFailureReported = false
+    mapFilterRetryCount = 0
+    if not InstallWorldMapFilterHook() and eventFrame then
+        eventFrame:RegisterEvent("ADDON_LOADED")
+    end
 end
 
 ApplyBlizzardOptions = function(profile, quiet)
     local actionBars = GetSavedActionBarOptions(profile)
     local result = { stored = 0, matched = 0, changed = 0, failed = 0, deferred = 0, queued = 0, persisted = 0, live = 0 }
-    if type(actionBars) ~= "table" then return result end
-
-    for bar = 2, 8 do
-        if NormalizeBoolean(actionBars[bar]) ~= nil then
-            result.stored = result.stored + 1
+    if type(actionBars) == "table" then
+        for bar = 2, 8 do
+            if NormalizeBoolean(actionBars[bar]) ~= nil then
+                result.stored = result.stored + 1
+            end
         end
     end
-    if result.stored == 0 then return result end
-
-
-    if InCombatLockdown and InCombatLockdown() then
-        result.deferred = result.stored
-        return result
-    end
-
-    local current, currentCount = ReadCurrentActionBarOptions()
-    if currentCount ~= 7 then
-        result.failed = result.stored
-        return result
-    end
-
-    local desiredArgs = {}
-    local changedBars = {}
-    for bar = 2, 8 do
-        local desired = NormalizeBoolean(actionBars[bar])
-        local existing = current[bar]
-        if desired == nil then
-            desired = existing
-        elseif desired == existing then
-            result.matched = result.matched + 1
+    if result.stored > 0 then
+        if InCombatLockdown and InCombatLockdown() then
+            result.deferred = result.stored
         else
-            changedBars[#changedBars + 1] = bar
+            local current, currentCount = ReadCurrentActionBarOptions()
+            if currentCount ~= 7 then
+                result.failed = result.stored
+            else
+                local desiredArgs = {}
+                local changedBars = {}
+                for bar = 2, 8 do
+                    local desired = NormalizeBoolean(actionBars[bar])
+                    local existing = current[bar]
+                    if desired == nil then
+                        desired = existing
+                    elseif desired == existing then
+                        result.matched = result.matched + 1
+                    else
+                        changedBars[#changedBars + 1] = bar
+                    end
+                    desiredArgs[bar - 1] = desired == true
+                end
+
+                if #changedBars > 0 then
+                    -- Persist the complete seven-toggle profile through Blizzard's dedicated C API.
+                    -- This does not alter the current Settings proxy values; it becomes native state
+                    -- on the next ordinary login/reload, after which no TurboFace driver is needed.
+                    local persistOK = false
+                    if APIAvailable("SetActionBarToggles") then
+                        local ok = pcall(SetActionBarTogglesCompat,
+                            desiredArgs[1], desiredArgs[2], desiredArgs[3], desiredArgs[4],
+                            desiredArgs[5], desiredArgs[6], desiredArgs[7])
+                        persistOK = ok
+                        if ok then result.persisted = #changedBars end
+                    end
+
+                    -- No-reload current-session mirror. RegisterStateDriver is the Blizzard-supported
+                    -- secure mechanism for controlling visibility of protected frames. We never call
+                    -- Settings.SetValue, MultiActionBar_Update, Show/Hide, or SetShown here.
+                    local liveFailed = 0
+                    for _, bar in ipairs(changedBars) do
+                        local desired = desiredArgs[bar - 1] == true
+                        local ok = ApplySessionActionBarDriver(bar, desired)
+                        if ok then
+                            result.changed = result.changed + 1
+                            result.live = result.live + 1
+                        else
+                            liveFailed = liveFailed + 1
+                        end
+                    end
+
+                    if liveFailed > 0 then
+                        -- If persistence succeeded, failed session mirrors still self-heal on the next
+                        -- normal login. Track only those failed mirrors as queued; a successful live
+                        -- mirror does not need a user reload.
+                        if persistOK then result.queued = liveFailed else result.failed = result.failed + liveFailed end
+                    end
+                end
+            end
         end
-        desiredArgs[bar - 1] = desired == true
     end
 
-    if #changedBars == 0 then
-        return result
-    end
-
-    -- Persist the complete seven-toggle profile through Blizzard's dedicated C API.
-    -- This does not alter the current Settings proxy values; it becomes native state
-    -- on the next ordinary login/reload, after which no TurboFace driver is needed.
-    local persistOK = false
-    if APIAvailable("SetActionBarToggles") then
-        local ok = pcall(SetActionBarTogglesCompat,
-            desiredArgs[1], desiredArgs[2], desiredArgs[3], desiredArgs[4],
-            desiredArgs[5], desiredArgs[6], desiredArgs[7])
-        persistOK = ok
-        if ok then result.persisted = #changedBars end
-    end
-
-    -- No-reload current-session mirror. RegisterStateDriver is the Blizzard-supported
-    -- secure mechanism for controlling visibility of protected frames. We never call
-    -- Settings.SetValue, MultiActionBar_Update, Show/Hide, or SetShown here.
-    local liveFailed = 0
-    for _, bar in ipairs(changedBars) do
-        local desired = desiredArgs[bar - 1] == true
-        local ok = ApplySessionActionBarDriver(bar, desired)
-        if ok then
-            result.changed = result.changed + 1
-            result.live = result.live + 1
-        else
-            liveFailed = liveFailed + 1
-        end
-    end
-
-    if liveFailed > 0 then
-        -- If persistence succeeded, failed session mirrors still self-heal on the next
-        -- normal login. Track only those failed mirrors as queued; a successful live
-        -- mirror does not need a user reload.
-        if persistOK then
-            result.queued = liveFailed
-        else
-            result.failed = liveFailed
-        end
-    end
+    ApplyMouseoverCastOptions(profile, result)
+    ApplyMapQuestLogOptions(profile, result)
     return result
 end
 
@@ -1536,9 +2009,9 @@ local function ReportLoadResults(profile, source, exact, storedBindings, macroRe
 	end
 	if blizzardOptionResult.stored > 0 then
 		if blizzardOptionResult.deferred > 0 then
-			PrintMessage("Blizzard action-bar options are waiting until they can be safely applied out of combat.")
+			PrintMessage("Blizzard options are waiting until they can be safely applied out of combat.")
 		else
-			PrintMessage("Blizzard action-bar options: " .. blizzardOptionResult.matched .. "/"
+			PrintMessage("Blizzard options: " .. blizzardOptionResult.matched .. "/"
 				.. blizzardOptionResult.stored .. " matched; " .. (blizzardOptionResult.live or blizzardOptionResult.changed or 0)
 				.. " changed live, " .. (blizzardOptionResult.persisted or 0) .. " persisted for next login, "
 				.. (blizzardOptionResult.queued or 0) .. " waiting for next login, "
@@ -1851,6 +2324,7 @@ local function StartStagedRestore(profileToken, exact, source, bootstrapState)
         stage = "macros",
     }
 	restoreRuntimeActive = true
+	ArmWorldMapFilterReconciliation(profileToken)
 	if eventFrame then
 		eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 		eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1887,19 +2361,21 @@ local function AttemptAutomaticRestore(attempt)
 		return
 	end
 
-	if not bootstrapState.firstSetup then
-		restoreScheduled = false
+    if not bootstrapState.firstSetup then
+        restoreScheduled = false
 		-- This used to return with no output at all, which is what a player experiences as
 		-- "quick setup does nothing" on a character that already ran setup once.
-		if bootstrapState.exhausted then
+        if bootstrapState.exhausted then
 			lastRestoreDecision = "retry budget exhausted after " .. bootstrapState.attempts .. " incomplete attempts"
 			PrintMessage("Automatic setup is disabled for this character after " .. bootstrapState.attempts
 				.. " incomplete attempts. Use Apply Stored Profile to retry, or Reset Character Record to re-enable it.")
-		else
-			lastRestoreDecision = "setup already completed for this character GUID"
-			PrintMessage("Setup already ran on this character. Use Apply Stored Profile to load the profile again, "
-				.. "or Reset Character Record if the character was never actually set up.")
-		end
+        else
+            lastRestoreDecision = "setup already completed for this character GUID"
+            if not pendingMapFilterProfile then
+                PrintMessage("Setup already ran on this character. Use Apply Stored Profile to load the profile again, "
+                    .. "or Reset Character Record if the character was never actually set up.")
+            end
+        end
 		return
 	end
 
@@ -1990,6 +2466,13 @@ function QuickSetup:Init()
     automaticConfigState = cfg and cfg.enabled == true or false
     cinematicConfigState = cfg and cfg.autoSkipCinematic == true or false
     initialized = true
+
+    -- A fresh character can restore these values successfully during login and still have
+    -- Blizzard replace questPOI/showQuestLevel when the World Map initializes for the first
+    -- time. Keep a one-shot, fingerprinted reconciliation armed until that first map open.
+    if automaticConfigState and ResolveCharacterTokens() then
+        ArmWorldMapFilterReconciliation(class)
+    end
 
     -- Cinematic skipping is a standalone Level-1 convenience toggle. It does
     -- not require automatic profile restoration to be enabled.
@@ -2204,6 +2687,97 @@ function QuickSetup:GetStatusText(token)
 		.. DescribeSavedEditModeLayout(token) .. (token == class and (" / " .. DescribeBootstrapState(bootstrapState)) or "")
 end
 
+-- Mutating live diagnostic for Forever's server-character map-filter CVars.
+-- Invoke only from the explicit slash command so the probe runs in a user hardware-event
+-- stack. Every attempt targets the stored profile value and stops on the first observable
+-- success; it never flips the setting away from the requested profile state.
+function QuickSetup:MapFilterProbe(selector)
+    if not ResolveCharacterTokens() then
+        PrintMessage("Map Filter probe: character identity is unavailable.")
+        return
+    end
+    selector = type(selector) == "string" and selector:lower():match("^%s*(.-)%s*$") or ""
+    local targetField = selector == "objectives" and "questObjectives" or "questLevels"
+    local entry
+    for _, candidate in ipairs(MAP_QUEST_LOG_CVARS) do
+        if candidate.field == targetField then entry = candidate; break end
+    end
+    local saved = GetSavedMapQuestLogOptions(class)
+    local desired = type(saved) == "table" and NormalizeBoolean(saved[targetField]) or nil
+    if not entry or desired == nil then
+        PrintMessage("Map Filter probe: no saved " .. tostring(entry and entry.label or targetField)
+            .. " value exists for " .. tostring(class) .. ".")
+        return
+    end
+
+    local filter = GetWorldMapFilter(entry.cvar)
+    local function ReadState(label)
+        local rawOK, raw = pcall(GetCVarCompat, entry.cvar)
+        local filterValue = ReadWorldMapFilter(entry.cvar)
+        PrintMessage("Map Filter probe " .. label .. ": CVar=" .. tostring(rawOK and raw or "<error>")
+            .. ", filter=" .. tostring(filterValue) .. ", desired=" .. tostring(desired) .. ".")
+        return rawOK and NormalizeBoolean(raw) == desired
+            and (filterValue == nil or filterValue == desired)
+    end
+
+    local getCVarInfo = C_CVar and C_CVar.GetCVarInfo
+    local info = type(getCVarInfo) == "function"
+        and { pcall(getCVarInfo, entry.cvar) } or { false }
+    local loaded = C_CVar and type(C_CVar.AreCVarsLoaded) == "function"
+        and C_CVar.AreCVarsLoaded() or "unavailable"
+    local executionSecure = type(issecure) == "function" and issecure() or "unavailable"
+    local apiSecure = type(issecurevariable) == "function"
+        and issecurevariable(C_CVar, "SetCVar") or "unavailable"
+    local filterSecure = filter and type(issecurevariable) == "function"
+        and issecurevariable(filter, "Set") or "unavailable"
+    PrintMessage("Map Filter probe metadata: loaded=" .. tostring(loaded)
+        .. ", executionSecure=" .. tostring(executionSecure)
+        .. ", apiSecure=" .. tostring(apiSecure) .. ", filterSecure=" .. tostring(filterSecure)
+        .. ", value=" .. tostring(info[2]) .. ", default=" .. tostring(info[3])
+        .. ", serverAccount=" .. tostring(info[4]) .. ", serverCharacter=" .. tostring(info[5])
+        .. ", locked=" .. tostring(info[6]) .. ", secure=" .. tostring(info[7])
+        .. ", readOnly=" .. tostring(info[8]) .. ".")
+    if ReadState("start") then
+        PrintMessage("Map Filter probe: the saved value already matches; no setter was invoked.")
+        return
+    end
+
+    local rawValue = desired and "1" or "0"
+    local succeeded = false
+    local function Attempt(label, callback)
+        if succeeded then return end
+        local ok, result = pcall(callback)
+        local matched = ReadState(label .. " immediate")
+        PrintMessage("Map Filter probe " .. label .. ": callOK=" .. tostring(ok)
+            .. ", return=" .. tostring(result) .. ", matched=" .. tostring(matched) .. ".")
+        succeeded = matched
+    end
+
+    if filter and type(filter.Set) == "function" and type(securecallfunction) == "function" then
+        Attempt("secure native filter", function()
+            return securecallfunction(filter.Set, filter, desired)
+        end)
+    end
+    if filter and type(filter.Set) == "function" then
+        Attempt("ordinary native filter", function() return filter:Set(desired) end)
+    end
+    if type(securecallfunction) == "function" then
+        Attempt("secure C_CVar", function()
+            return securecallfunction(SetCVarCompat, entry.cvar, rawValue)
+        end)
+    end
+    Attempt("ordinary C_CVar", function() return SetCVarCompat(entry.cvar, rawValue) end)
+    if type(ConsoleExec) == "function" then
+        Attempt("ConsoleExec", function() return ConsoleExec(entry.cvar .. " " .. rawValue) end)
+    end
+
+    if C_Timer and type(C_Timer.After) == "function" then
+        for _, delay in ipairs({ 0.1, 1, 3 }) do
+            C_Timer.After(delay, function() ReadState("after " .. tostring(delay) .. "s") end)
+        end
+    end
+end
+
 function QuickSetup:DebugStatus()
     local state = GetCharacterBootstrapState()
 	local profile = GetClassProfile(class) or {}
@@ -2333,7 +2907,7 @@ local function ValidateImportedProfile(token, source)
 
     if source.blizzard ~= nil then
         if type(source.blizzard) ~= "table" then return nil, "blizzard settings must be a table" end
-        local blizzKeysOK, blizzKeyErr = RejectUnknownKeys(source.blizzard, { actionBars=true, editModeLayout=true }, "Blizzard")
+        local blizzKeysOK, blizzKeyErr = RejectUnknownKeys(source.blizzard, { actionBars=true, editModeLayout=true, mouseoverCast=true, mapQuestLog=true }, "Blizzard")
         if not blizzKeysOK then return nil, blizzKeyErr end
         clean.blizzard = {}
         if source.blizzard.actionBars ~= nil then
@@ -2364,6 +2938,30 @@ local function ValidateImportedProfile(token, source)
                 return nil, "invalid Edit Mode type"
             end
             clean.blizzard.editModeLayout = { index = index, name = saved.name, layoutType = saved.layoutType }
+        end
+        if source.blizzard.mouseoverCast ~= nil then
+            local saved = source.blizzard.mouseoverCast
+            if type(saved) ~= "table" then return nil, "invalid Mouseover Cast settings" end
+            local mouseoverKeysOK, mouseoverKeyErr = RejectUnknownKeys(saved, { enabled=true, modifier=true }, "Mouseover Cast")
+            if not mouseoverKeysOK then return nil, mouseoverKeyErr end
+            if type(saved.enabled) ~= "boolean" then return nil, "invalid Mouseover Cast checkbox" end
+            local modifier = NormalizeMouseoverCastModifier(saved.modifier)
+            if not modifier then return nil, "invalid Mouseover Cast modifier" end
+            clean.blizzard.mouseoverCast = { enabled = saved.enabled, modifier = modifier }
+        end
+        if source.blizzard.mapQuestLog ~= nil then
+            local saved = source.blizzard.mapQuestLog
+            if type(saved) ~= "table" then return nil, "invalid Map and Quest Log settings" end
+            local mapKeysOK, mapKeyErr = RejectUnknownKeys(saved, {
+                questObjectives=true, questLevels=true, questDifficultyColor=true,
+                instanceEntrances=true, lowLevelQuests=true, trackedItems=true,
+            }, "Map and Quest Log")
+            if not mapKeysOK then return nil, mapKeyErr end
+            clean.blizzard.mapQuestLog = {}
+            for key, value in pairs(saved) do
+                if type(value) ~= "boolean" then return nil, "invalid Map and Quest Log checkbox" end
+                clean.blizzard.mapQuestLog[key] = value
+            end
         end
     end
 
@@ -2425,8 +3023,14 @@ function QuickSetup:ImportClassProfile(payload)
     return true
 end
 
-eventFrame:SetScript("OnEvent", function(_, event)
-    if event == "EDIT_MODE_LAYOUTS_UPDATED" then
+eventFrame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 == "Blizzard_WorldMap" then
+            if not InstallWorldMapFilterHook() and C_Timer and type(C_Timer.After) == "function" then
+                C_Timer.After(0, InstallWorldMapFilterHook)
+            end
+        end
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
         ApplyPendingEditModeLayout()
     elseif event == "PLAYER_REGEN_ENABLED" then
 		if runtimeCleanupPending then

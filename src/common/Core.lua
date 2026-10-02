@@ -1902,6 +1902,15 @@ SlashCmdList["TURBOFACE"] = function(msg)
             return
         end
 
+        if cmd == "mapfilterprobe" then
+            if ns.QuickSetup and ns.QuickSetup.MapFilterProbe then
+                ns.QuickSetup:MapFilterProbe(args)
+            elseif DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage("TurboFace Quick Setup: Map Filter probe unavailable")
+            end
+            return
+        end
+
         if cmd == "sound" then
             if ns.AuditionSound then
                 ns:AuditionSound(args)

@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-09-29
-**Current addon version:** 0.18.7
+**Last updated:** 2026-10-02
+**Current addon version:** 0.18.8
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -2791,11 +2791,48 @@ apply, only the optional `CINEMATIC_START` listener may remain registered.
 
 The account-wide class library lives at `TurboFaceProfilesDB.quickSetup.classes[CLASS]`.
 **Save Class Profile** captures account + character macros (with scope), character keybindings,
-action placements across slots 1-180, Blizzard Action Bars 2-8, the selected Edit Mode layout, and
+action placements across slots 1-180, Blizzard Action Bars 2-8, the optional native Mouseover Cast
+checkbox/modifier pair, supported Map and Quest Log filters, the selected Edit Mode layout, and
 only the defined Quick Setup CVar allowlist. Class profiles are independent from normal TurboFace
 settings profiles and from XP split history. Action Bars 2-8 are read from Blizzard's live
 `PROXY_SHOW_ACTIONBAR_*` Settings values when available, with `GetActionBarToggles()` retained as a
 fallback when the Settings system is not ready.
+
+Map and Quest Log restore prefers `WorldMapFrame.WorldMapTrackingOptionsButton`'s native
+`WorldMapFilterMixin` objects whenever Blizzard has created them. This keeps the dropdown and its
+backing values on the same path; notably, `trivialQuests` routes through Blizzard's Settings proxy
+rather than behaving like a standalone CVar. Before the World Map loads, CVar and `C_Minimap`
+compatibility calls provide the fallback. Each changed filter is reread and must match before Quick
+Setup reports it as successfully applied.
+Some clients initialize `questPOI` and `showQuestLevel` only when the fresh character first opens
+the World Map, which can replace values that already matched during the login restore. Quick Setup
+therefore arms a fingerprinted, one-shot `WorldMapTrackingOptionsButton:OnShow` reconciliation. It
+runs after Blizzard's handler, records the applied fingerprint in the character store, and becomes
+inert; it is not a continuing owner of the player's Map Filter choices.
+The native filter setter is invoked through `securecallfunction` when available because Forever can
+reject `questPOI` changes inherited from ordinary addon execution. The value is still reread after
+that call; a secure-call return alone is never treated as proof that the filter changed. If the
+secure attempt does not take, Quick Setup retries the same native setter through ordinary addon
+execution because Forever's `showQuestLevel` currently accepts that path instead.
+The CVar compatibility call and `ConsoleExec` are final fallbacks. First-map reconciliation retries
+three times with increasing delays before reporting failure, including `GetCVarInfo` ownership and
+security flags for `showQuestLevel`; no path is considered successful without a matching reread.
+The first native attempt is synchronous inside the post-`OnShow` hook. Forever's server-character
+map CVars require the hardware-event authorization from the user's Map key/click even though
+`GetCVarInfo` reports them writable and non-secure; deferring that call by one frame loses the
+authorization. Delayed retries remain diagnostic fallbacks rather than the expected success path.
+Because `questPOI` can require a stricter user-action stack than frame `OnShow` retains, the same
+one-shot reconciliation is post-hooked to Blizzard's `ToggleWorldMap`, `ToggleQuestLog`,
+`OpenWorldMap`, and `OpenQuestLog` entry points. These hooks become inert once the fingerprint is
+recorded and never enforce the settings continuously.
+If Forever still denies `questPOI` from those Blizzard-owned callback stacks, Quick Setup displays an
+addon-owned confirmation popup listing only the outstanding filters. Its **Apply** click supplies the
+same direct hardware-event context verified by `/tf mapfilterprobe objectives`; successful verified
+application records the fingerprint, so this is a one-time compatibility handoff rather than a
+persistent prompt or setting owner.
+The prompt must be TurboFace-owned: routing its action through Blizzard's `StaticPopup` callback
+dispatcher did not retain the context in live testing. Its button `OnClick` calls the native filter
+setters directly, matching the successful explicit probe path, and only then runs normal verification.
 
 Automatic restore is eligible only at **Level 1 with 0 XP** and is keyed to the player's GUID, so a
 recreated same-name character is detected as new while an already completed GUID is not cleaned

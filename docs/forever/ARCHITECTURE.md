@@ -4,13 +4,13 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
-**Last updated:** 2026-09-29
-**Current addon version:** 0.18.7
-**Target client:** World of Warcraft Forever beta 1.60.1, Interface 16001, project 1  
-**Observed beta build:** 69977  
+**Last updated:** 2026-10-02
+**Current addon version:** 0.18.8
+**Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
+**Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.18.7
+**Source baseline:** TurboFace unified 0.18.8
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -40,15 +40,12 @@ These rules are load-bearing. A feature port is not complete merely because it r
 
 TurboFace Forever is currently a fork of the Classic Era 0.17.87 source line, but it should be treated as a **client flavor**, not as permission to duplicate every Classic subsystem indefinitely.
 
-Forever is identified by the stable tuple:
-
-```text
-version   = 1.60.1
-interface = 16001
-project   = 1
-```
-
-The numeric beta build is recorded for diagnostics but is **not** the compatibility boundary. The client advanced from build 69913 to 69977 without changing the stable tuple; exact-build gating therefore disabled correct adapters and re-opened unsafe paths. Client adapters must use the stable identity or direct capability detection.
+Forever is identified by **package identity**: `Core/Compatibility.lua` is a client-exclusive overlay
+listed only by `src/forever/TurboFace.toc`. Runtime version, interface, project, and numeric build
+values remain diagnostic metadata, never activation gates. Blizzard changed the runtime identity
+again at build 70170; the old tuple check made TurboFace select Classic policy and re-enter
+`NamePlateUnitFrame:UpdateAnchors()`, which now reads restricted geometry. Package-owned policy and
+direct capability detection prevent future beta identity drift from reopening unsafe paths.
 
 `Core/Compatibility.lua` owns the current target identity and diagnostic capability inventory. `Core/Compat.lua` owns individual API normalization. `Core/Client.lua` resolves the selected client flavor and is the machine-readable source for feature implementation class/availability; it does not store user preferences.
 
