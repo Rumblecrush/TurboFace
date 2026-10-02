@@ -11,6 +11,93 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_forever_package_identity_survives_client_version_drift(self) -> None:
+        compatibility = (ROOT / "src" / "forever" / "Core" / "Compatibility.lua").read_text()
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        core = (ROOT / "src" / "common" / "Core.lua").read_text()
+
+        self.assertIn("local IS_TARGET_FOREVER_BUILD = true", compatibility)
+        self.assertNotIn('tostring(v) == "1.60.1"', compatibility)
+        self.assertNotIn("tonumber(toc) == 16001", compatibility)
+        self.assertNotIn("WOW_PROJECT_ID == 1", compatibility)
+        self.assertIn("staticFriendlyIdentityRestore = isForever", client)
+        self.assertIn('if not wasEnabled and CorePolicy("staticFriendlyIdentityRestore") then return true end', core)
+        self.assertIn('if not CorePolicy("staticFriendlyIdentityRestore")', core)
+
+    def test_quick_setup_saves_mouseover_cast_checkbox_and_modifier(self) -> None:
+        quick_setup = (ROOT / "src" / "common" / "QuickSetup.lua").read_text()
+        self.assertIn('GetCVarCompat, "enableMouseoverCast"', quick_setup)
+        self.assertIn('GetModifiedClickCompat, "MOUSEOVERCAST"', quick_setup)
+        self.assertIn('SetCVarCompat, "enableMouseoverCast"', quick_setup)
+        self.assertIn('SetModifiedClickCompat, "MOUSEOVERCAST"', quick_setup)
+        self.assertIn('storedProfile.blizzard.mouseoverCast = mouseoverCast', quick_setup)
+        for modifier in ("NONE", "ALT", "CTRL", "SHIFT"):
+            self.assertRegex(quick_setup, rf"\b{modifier}\s*=\s*true")
+
+        for flavor in ("classic", "forever"):
+            compatibility = (ROOT / "src" / flavor / "Core" / "Compat.lua").read_text()
+            self.assertIn("API.IsMouseoverCastSupported = pick(IsMouseoverCastSupported)", compatibility)
+            self.assertIn("API.GetModifiedClick = pick(GetModifiedClick)", compatibility)
+            self.assertIn("API.SetModifiedClick = pick(SetModifiedClick)", compatibility)
+
+    def test_quick_setup_saves_map_and_quest_log_filters(self) -> None:
+        quick_setup = (ROOT / "src" / "common" / "QuickSetup.lua").read_text()
+        expected_cvars = {
+            "questObjectives": "questPOI",
+            "questLevels": "showQuestLevel",
+            "questDifficultyColor": "showQuestDifficultyColor",
+            "instanceEntrances": "showDungeonEntrancesOnMap",
+            "trackedItems": "contentTrackingFilter",
+        }
+        for field, cvar in expected_cvars.items():
+            self.assertIn(f'field = "{field}", cvar = "{cvar}"', quick_setup)
+        self.assertIn("filters.TrivialQuests", quick_setup)
+        self.assertIn("return not filteredOut", quick_setup)
+        self.assertIn("storedProfile.blizzard.mapQuestLog = mapQuestLog", quick_setup)
+        self.assertIn("SetMinimapTrackingCompat, filterIndex, desired", quick_setup)
+        self.assertIn("worldMap.WorldMapTrackingOptionsButton", quick_setup)
+        self.assertIn('SetWorldMapFilter(entry.cvar, desired)', quick_setup)
+        self.assertIn('SetWorldMapFilter("trivialQuests", desired)', quick_setup)
+        self.assertIn("minimapUtil.SetTrackingFilterByFilterID", quick_setup)
+        self.assertIn("ReadMapQuestLogCVar(entry) == desired", quick_setup)
+        self.assertIn("ReadLowLevelQuestFilter() == desired", quick_setup)
+        self.assertIn("ArmWorldMapFilterReconciliation(profileToken)", quick_setup)
+        self.assertIn('event == "ADDON_LOADED"', quick_setup)
+        self.assertIn('arg1 == "Blizzard_WorldMap"', quick_setup)
+        self.assertIn('hooksecurefunc(button, "OnShow"', quick_setup)
+        self.assertIn("reconcile synchronously while that authorization is still present", quick_setup)
+        self.assertIn("CharRoot().mapQuestLogFingerprint", quick_setup)
+        self.assertIn("pcall(securecallfunction, filter.Set, filter, desired)", quick_setup)
+        self.assertIn("local ok = pcall(filter.Set, filter, desired)", quick_setup)
+        self.assertIn("pcall(securecallfunction, SetCVarCompat, entry.cvar, rawValue)", quick_setup)
+        self.assertIn("changed ~= false", quick_setup)
+        self.assertIn("pcall(ConsoleExec, entry.cvar", quick_setup)
+        self.assertIn("MAX_MAP_FILTER_RETRIES = 3", quick_setup)
+        self.assertIn('pcall(C_CVar.GetCVarInfo, "showQuestLevel")', quick_setup)
+        self.assertIn("Map Filter restore is still blocked for:", quick_setup)
+        self.assertIn('CreateFrame("Frame", nil, UIParent, "BackdropTemplate")', quick_setup)
+        self.assertIn('apply:SetScript("OnClick"', quick_setup)
+        self.assertIn("SetWorldMapFilter(entry.cvar, desired)", quick_setup)
+        self.assertIn("ReconcileMapFiltersAfterWorldMapLoad()", quick_setup)
+        self.assertIn("function QuickSetup:MapFilterProbe(selector)", quick_setup)
+        self.assertIn('selector == "objectives" and "questObjectives" or "questLevels"', quick_setup)
+        self.assertIn('"ToggleWorldMap", "ToggleQuestLog", "OpenWorldMap", "OpenQuestLog"', quick_setup)
+        self.assertIn('Attempt("secure native filter"', quick_setup)
+        self.assertIn('Attempt("ordinary native filter"', quick_setup)
+        self.assertIn('Attempt("secure C_CVar"', quick_setup)
+        self.assertIn('Attempt("ordinary C_CVar"', quick_setup)
+        self.assertIn('Attempt("ConsoleExec"', quick_setup)
+        core = (ROOT / "src" / "common" / "Core.lua").read_text()
+        self.assertIn('cmd == "mapfilterprobe"', core)
+        self.assertIn("ns.QuickSetup:MapFilterProbe(args)", core)
+
+        for flavor in ("classic", "forever"):
+            compatibility = (ROOT / "src" / flavor / "Core" / "Compat.lua").read_text()
+            self.assertIn("API.GetNumMinimapTrackingTypes", compatibility)
+            self.assertIn("API.GetMinimapTrackingFilter", compatibility)
+            self.assertIn("API.SetMinimapTracking", compatibility)
+            self.assertIn("API.IsMinimapTrackingFilteredOut", compatibility)
+
     def test_leash_timer_uses_secret_safe_midnight_event_fallbacks(self) -> None:
         source = (ROOT / "src" / "common" / "Combat" / "LeashTimer.lua").read_text()
         forever = (ROOT / "src" / "forever" / "Core" / "Compat.lua").read_text()

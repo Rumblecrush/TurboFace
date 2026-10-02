@@ -1,5 +1,11 @@
 # TurboFace Classic Changelog
 
+## 0.18.8 — Quick Setup Blizzard settings
+
+- Lvl1 Quick Setup now captures and restores Blizzard's **Enable Mouseover Cast** checkbox and its **None / Alt / Ctrl / Shift** modifier selection when the client supports them. Unsupported clients omit the optional pair without affecting the existing Action Bars 2–8 snapshot.
+- Lvl1 Quick Setup now also captures the supported **Map and Quest Log** filters for Quest Objectives, Quest Levels, Quest Difficulty Color, Instance Entrances, Low-Level Quests, and Tracked Items. Restore prefers Blizzard's Map Filter objects, follows the native Settings-backed low-level quest route, and verifies every write before counting it as applied.
+- Added a fingerprinted first-World-Map reconciliation for clients that replace fresh-character Quest Objectives or Quest Levels defaults after the initial login restore.
+
 ## 0.18.7 — Rumblecrush preset refresh
 
 - Rebuilt **Rumblecrush's Preset** from the supplied 2026-09-29 schema-79 export while retaining its sparse, factory-default-relative representation. The refresh includes the latest mover layout, Grocery button size, target aura arrangement, minimap preferences, and module gates.

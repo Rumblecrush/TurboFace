@@ -1052,6 +1052,15 @@ API.GetCVar = pick(C_CVar and C_CVar.GetCVar, GetCVar)
 API.SetCVar = pick(C_CVar and C_CVar.SetCVar, SetCVar)
 API.GetActionBarToggles = pick(GetActionBarToggles)
 API.SetActionBarToggles = pick(SetActionBarToggles)
+API.IsMouseoverCastSupported = pick(IsMouseoverCastSupported)
+API.GetModifiedClick = pick(GetModifiedClick)
+API.SetModifiedClick = pick(SetModifiedClick)
+API.GetCurrentBindingSet = pick(GetCurrentBindingSet)
+API.SaveBindings = pick(SaveBindings)
+API.GetNumMinimapTrackingTypes = pick(C_Minimap and C_Minimap.GetNumTrackingTypes)
+API.GetMinimapTrackingFilter = pick(C_Minimap and C_Minimap.GetTrackingFilter)
+API.SetMinimapTracking = pick(C_Minimap and C_Minimap.SetTracking)
+API.IsMinimapTrackingFilteredOut = pick(C_Minimap and C_Minimap.IsFilteredOut)
 
 -- Retail-derived clients publish macro capacities through Constants.MacroConsts;
 -- older Classic clients exported the same values as globals. Keep the namespace

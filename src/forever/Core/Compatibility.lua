@@ -117,24 +117,20 @@ local TAG_GROUP = {
 -- Client-specific adapters may use this identity check, but it is NOT an
 -- activation gate. The user's normal Options-panel gates decide what runs.
 --
--- The beta's hotfix build advanced from 69913 to 69977 without changing its
--- product version, interface number, or project identity. Build-number equality
--- therefore cannot be an ownership/safety boundary: it silently disabled the
--- detached profession UI and re-enabled unsafe native-frame paths. The stable
--- Forever identity is the full version/interface/project tuple; retain the
--- numeric build only for diagnostics and live-validation records.
-local IS_TARGET_FOREVER_BUILD = false
+-- This file exists only in the Forever package overlay and is listed only by
+-- src/forever/TurboFace.toc. Package identity is therefore the stable safety
+-- boundary. Runtime version/interface/project tuples are diagnostic data, not
+-- activation gates: Blizzard can change any member in a beta update, and a
+-- false negative silently re-enables Classic-only native-frame paths such as
+-- UnitFrame:UpdateAnchors(), which now performs restricted FrameMeasurement.
+local IS_TARGET_FOREVER_BUILD = true
 local FOREVER_BUILD
 do
-    local v, b, buildDate, toc
+    local _, b
     if type(GetBuildInfo) == "function" then
-        v, b, buildDate, toc = GetBuildInfo()
+        _, b = GetBuildInfo()
     end
     FOREVER_BUILD = tostring(b or "")
-    if tostring(v) == "1.60.1"
-        and tonumber(toc) == 16001 and WOW_PROJECT_ID == 1 then
-        IS_TARGET_FOREVER_BUILD = true
-    end
 end
 Compat.IS_TARGET_FOREVER_BUILD = IS_TARGET_FOREVER_BUILD
 Compat.FOREVER_BUILD = FOREVER_BUILD
