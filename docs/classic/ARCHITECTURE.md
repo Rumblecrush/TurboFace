@@ -1,6 +1,6 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 **Current addon version:** 0.18.8
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
@@ -3525,6 +3525,13 @@ Modern active-quest iteration uses Blizzard's explicit active count rather than 
 table length, and reconciles each gossip entry's completion flag with `C_QuestLog.IsComplete`;
 this is required when one NPC mixes completed and in-progress quests and the gossip payload's
 completion field is missing or stale.
+
+Repeatable quests are a deliberate manual boundary on every surface: their list marker is used
+when present, with `API.IsRepeatableQuest(questID)` covering active/legacy rows that omit it.
+The current quest-giver panel is checked again before Accept, Complete, or Reward so a manually
+opened repeatable cannot fall back into automation. The controller also yields at an NPC whose
+gossip options expose a vendor service; selling remains immediately accessible when accepting a
+quest would require a bag slot.
 
 NPC interaction events are observation boundaries, not action callbacks. Gossip selection is
 delayed until Blizzard has populated the interaction, while quest selection, acceptance,

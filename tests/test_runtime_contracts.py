@@ -490,6 +490,134 @@ assert(rewarded == 1)
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_quest_automation_keeps_repeatables_and_vendor_npcs_manual(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the quest automation contract")
+        harness = r'''
+local settings = {
+    automateGossip = false,
+    autoQuestAccept = true,
+    autoQuestTurnIn = true,
+    automateSpiritHealer = false,
+}
+local currentQuestID = 9001
+local ns = {
+    PlusSettings = function() return settings end,
+    API = {
+        QuestReadyForTurnIn = function() return false end,
+        IsRepeatableQuest = function(questID) return questID == 9001 end,
+        GetCurrentQuestID = function() return currentQuestID end,
+    },
+    Chat = function() end,
+}
+
+local frames = {}
+function CreateFrame()
+    local frame = { events = {} }
+    function frame:SetScript(kind, callback) self[kind] = callback end
+    function frame:UnregisterAllEvents() self.events = {} end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    frames[#frames + 1] = frame
+    return frame
+end
+function ns.API.RegisterEvent(frame, event) frame:RegisterEvent(event) return true end
+
+local timers = {}
+C_Timer = {
+    After = function(delay, callback)
+        timers[#timers + 1] = { delay = delay, callback = callback }
+    end,
+}
+local function RunDelay(delay)
+    for index, timer in ipairs(timers) do
+        if timer.delay == delay then
+            table.remove(timers, index)
+            timer.callback()
+            return true
+        end
+    end
+    return false
+end
+local function CountDelay(delay)
+    local count = 0
+    for _, timer in ipairs(timers) do
+        if timer.delay == delay then count = count + 1 end
+    end
+    return count
+end
+
+function IsShiftKeyDown() return false end
+function UnitIsGhost() return false end
+function UnitGUID(unit) if unit == "npc" then return "Creature-test" end end
+
+local vendorVisible = true
+local available = {{ questID = 42, title = "Ordinary quest" }}
+local active = {}
+local selected = 0
+C_GossipInfo = {
+    GetNumAvailableQuests = function() return #available end,
+    GetNumActiveQuests = function() return #active end,
+    GetAvailableQuests = function() return available end,
+    GetActiveQuests = function() return active end,
+    GetOptions = function()
+        return vendorVisible and {{ icon = 132060 }} or {}
+    end,
+    SelectAvailableQuest = function() selected = selected + 1 end,
+    SelectActiveQuest = function() selected = selected + 1 end,
+}
+
+local accepted, completed, rewarded = 0, 0, 0
+function AcceptQuest() accepted = accepted + 1 end
+function IsQuestCompletable() return true end
+function CompleteQuest() completed = completed + 1 end
+function GetNumQuestChoices() return 0 end
+function GetQuestReward() rewarded = rewarded + 1 end
+
+assert(loadfile("src/common/Plus/Automation.lua"))("TurboFace", ns)
+ns.PlusAutomation:Init()
+
+local questFrame
+for _, frame in ipairs(frames) do
+    if frame.events.GOSSIP_SHOW and frame.events.QUEST_DETAIL then questFrame = frame end
+end
+assert(questFrame, "quest automation event frame was not registered")
+
+-- A vendor-capable NPC must be left at its service menu even when it also
+-- exposes a normal quest that the automation could otherwise select.
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "vendor gossip selected a quest before the player could sell")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+
+-- The direct gossip flag handles available repeatables. The quest-ID adapter
+-- catches active repeatables whose legacy-shaped row has no repeatable field.
+vendorVisible = false
+available = {{ questID = 9001, title = "Blood Shards", repeatable = true }}
+active = {}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "repeatable quest was auto-accepted")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+
+available = {}
+active = {{ questID = 9001, title = "Blood Shards", isComplete = true }}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "repeatable quest was auto-selected for turn-in")
+
+-- Even a player-opened repeatable detail/progress/reward panel remains manual.
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0)
+assert(accepted == 0 and completed == 0 and rewarded == 0,
+    "repeatable quest panel received an automated action")
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_loot_frame_accepts_either_documented_player_field(self) -> None:
         source = (ROOT / "src" / "common" / "LootFrame.lua").read_text()
 

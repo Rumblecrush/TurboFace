@@ -1,5 +1,15 @@
 # TurboFace Classic Changelog
 
+## Next — Quest automation safeguards
+
+- Auto Quest Accept and Turn-in now leave all repeatable quests manual. TurboFace uses the
+  native repeatable flag/quest-ID predicate on modern gossip, legacy gossip, and Quest Greeting
+  surfaces, so consumable hand-ins such as the Barrens Blood Shards cannot cascade through an
+  entire stack.
+- Quest automation also yields when an NPC offers a vendor service, preserving immediate access to
+  selling when the NPC happens to offer a quest as well — including when the player needs a free
+  bag slot before accepting it.
+
 ## 0.18.8 — Quick Setup Blizzard settings
 
 - Lvl1 Quick Setup now captures and restores Blizzard's **Enable Mouseover Cast** checkbox and its **None / Alt / Ctrl / Shift** modifier selection when the client supports them. Unsupported clients omit the optional pair without affecting the existing Action Bars 2–8 snapshot.

@@ -4,7 +4,7 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 **Current addon version:** 0.18.8
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
@@ -1144,6 +1144,7 @@ Automation owns policy and lifecycle; client actions live behind `ns.API`:
 - battleground release uses `API.ReleaseSpirit()` (`RepopMe` on Classic/when available);
 - repair summaries use `API.GetCoinText()`;
 - quest turn-in readiness uses `API.QuestReadyForTurnIn()`;
+- repeatable-quest detection uses `API.IsRepeatableQuest()` alongside the live gossip row marker;
 - event drift remains guarded through `API.RegisterEvent()`.
 
 The shared quest controller keeps serialized selection confirmation/retry behavior. This hardening is
@@ -1155,6 +1156,14 @@ The shared controller therefore defers gossip selection until the payload is sta
 quest selection, acceptance, completion, and reward actions only on later frames. It waits for the
 corresponding success event before scanning the NPC again, preventing event-order races from leaving
 an invisible interaction latched until the player moves out of range.
+
+Repeatable quest interactions remain manual even when both quest toggles are enabled. The shared
+controller skips repeatable rows on modern gossip, legacy gossip, and Quest Greeting, then checks
+the current quest-giver panel again before accepting, completing, or rewarding a player-opened
+repeatable. This prevents consumable repeatables such as Blood Shards from chaining through a stack.
+It also yields before selecting any quest at an NPC that exposes Blizzard's vendor gossip service,
+so a full-bag player can open the vendor menu rather than being forced into a quest detail panel
+that cannot be accepted.
 
 System Tweaks also uses one shared implementation. Fast loot guards the loot APIs, resolves either
 modern or legacy loot-method identity, preserves master-loot thresholds, skips locked slots, and

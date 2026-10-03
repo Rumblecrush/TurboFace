@@ -155,6 +155,56 @@ end
 -- Quest accept / turn-in
 -- ---------------------------------------------------------------------------
 
+-- A repeatable quest can deliberately consume an item stack (for example,
+-- Blood Shards of Agamaggan).  Never turn a single interaction into an
+-- unbounded item hand-in loop: repeatable quests stay entirely player-driven,
+-- whether they arrive through modern gossip, a legacy list, or a Quest Greeting.
+local function IsReadableTrue(value)
+    if ns.API.CanAccessValue and not ns.API.CanAccessValue(value) then return false end
+    return value == true or value == 1
+end
+
+local function QuestIsRepeatable(quest, questID)
+    if type(quest) == "table" and IsReadableTrue(quest.repeatable) then return true end
+    questID = questID or (type(quest) == "table" and quest.questID)
+    if not questID or not ns.API.IsRepeatableQuest then return false end
+    local ok, repeatable = pcall(ns.API.IsRepeatableQuest, questID)
+    return ok and IsReadableTrue(repeatable)
+end
+
+local function CurrentQuestIsRepeatable()
+    if not ns.API.GetCurrentQuestID then return false end
+    local ok, questID = pcall(ns.API.GetCurrentQuestID)
+    return ok and QuestIsRepeatable(nil, questID)
+end
+
+-- The modern GossipOptionUIInfo type no longer has the legacy `type =
+-- "vendor"` field, but Blizzard retains the service's stable icon file ID.
+-- Do not select a quest first when the player has opened an NPC specifically
+-- to sell.  Legacy clients continue to expose the service type directly.
+local VENDOR_GOSSIP_ICON = 132060 -- Interface\\GossipFrame\\VendorGossipIcon
+local function HasVendorGossipOption()
+    if C_GossipInfo and C_GossipInfo.GetOptions then
+        local options = C_GossipInfo.GetOptions()
+        if type(options) == "table" then
+            for _, option in ipairs(options) do
+                if type(option) == "table" and
+                    (option.icon == VENDOR_GOSSIP_ICON or option.overrideIconID == VENDOR_GOSSIP_ICON) then
+                    return true
+                end
+            end
+            return false
+        end
+    end
+    if GetGossipOptions then
+        local values = { GetGossipOptions() }
+        for i = 2, #values, 2 do
+            if values[i] == "vendor" then return true end
+        end
+    end
+    return false
+end
+
 -- One NPC can expose several quest states at once, and accepting/turning in one
 -- quest can reveal another without Classic emitting a fresh GOSSIP_SHOW. Keep a
 -- small interaction-local processed set so post-action rescans can advance the
@@ -282,6 +332,7 @@ local function SelectModernGossipQuest(p)
             for i = 1, count do
                 local quest = active[i]
                 if QuestEntryComplete(quest) and quest.questID
+                    and not QuestIsRepeatable(quest)
                     and not questProcessedActive[quest.questID] then
                     return SelectQuestWithConfirmation(
                         "active", quest.questID, C_GossipInfo.SelectActiveQuest)
@@ -296,6 +347,7 @@ local function SelectModernGossipQuest(p)
             for i = 1, #available do
                 local quest = available[i]
                 if type(quest) == "table" and quest.questID
+                    and not QuestIsRepeatable(quest)
                     and not questProcessedAvailable[quest.questID] then
                     return SelectQuestWithConfirmation(
                         "available", quest.questID, C_GossipInfo.SelectAvailableQuest)
@@ -320,7 +372,9 @@ local function SelectLegacyGossipQuest(p)
                     local offset = (i - 1) * stride
                     local title = values[offset + 1]
                     local key = type(title) == "string" and ("legacy:" .. title) or nil
-                    if values[offset + 4] and (not key or not questProcessedActive[key]) then
+                    local questID = stride >= 7 and values[offset + 7] or nil
+                    if values[offset + 4] and not QuestIsRepeatable(nil, questID)
+                        and (not key or not questProcessedActive[key]) then
                         if key then questProcessedActive[key] = true end
                         SelectGossipActiveQuest(i)
                         return true
@@ -336,9 +390,13 @@ local function SelectLegacyGossipQuest(p)
             local values = GetGossipAvailableQuests and { GetGossipAvailableQuests() } or nil
             local stride = values and math.floor(#values / count) or 0
             for i = 1, count do
-                local title = stride > 0 and values[((i - 1) * stride) + 1] or nil
+                local offset = (i - 1) * stride
+                local title = stride > 0 and values[offset + 1] or nil
                 local key = type(title) == "string" and ("legacy:" .. title) or nil
-                if not key or not questProcessedAvailable[key] then
+                local repeatable = stride >= 5 and values[offset + 5] or nil
+                local questID = stride >= 8 and values[offset + 8] or nil
+                if not IsReadableTrue(repeatable) and not QuestIsRepeatable(nil, questID)
+                    and (not key or not questProcessedAvailable[key]) then
                     if key then questProcessedAvailable[key] = true end
                     SelectGossipAvailableQuest(i)
                     return true
@@ -373,7 +431,8 @@ local function SelectQuestGreeting(p)
             end
             local key = questID and ("greeting-id:" .. questID)
                 or (type(title) == "string" and ("greeting:" .. title) or nil)
-            if ready and (not key or not questProcessedActive[key]) then
+            if ready and not QuestIsRepeatable(nil, questID)
+                and (not key or not questProcessedActive[key]) then
                 key = key or ("greeting-active-index:" .. i)
                 return SelectQuestWithConfirmation("active", key, SelectActiveQuest, i)
             end
@@ -385,10 +444,12 @@ local function SelectQuestGreeting(p)
         for i = 1, count do
             local title = GetAvailableTitle and GetAvailableTitle(i) or nil
             local questID = GetAvailableQuestID and GetAvailableQuestID(i) or nil
+            local _, _, repeatable = GetAvailableQuestInfo and GetAvailableQuestInfo(i)
             local key = questID and ("greeting-id:" .. questID)
                 or (type(title) == "string" and ("greeting:" .. title))
                 or ("greeting-available-index:" .. i)
-            if not questProcessedAvailable[key] then
+            if not IsReadableTrue(repeatable) and not QuestIsRepeatable(nil, questID)
+                and not questProcessedAvailable[key] then
                 return SelectQuestWithConfirmation("available", key, SelectAvailableQuest, i)
             end
         end
@@ -398,6 +459,7 @@ end
 
 local function DriveQuestSelection(p)
     RefreshQuestInteractionIdentity()
+    if HasVendorGossipOption() then return false end
     if SelectModernGossipQuest(p) then return true end
     if SelectLegacyGossipQuest(p) then return true end
     return SelectQuestGreeting(p)
@@ -466,11 +528,13 @@ local function OnQuestAutomation(_, event, arg1)
         ScheduleQuestSelectionPump()
     elseif event == "QUEST_DETAIL" then
         ConfirmPendingQuest("available")
+        if CurrentQuestIsRepeatable() then return end
         DeferQuestAction(function(latest)
             if latest.autoQuestAccept and AcceptQuest then AcceptQuest() end
         end)
     elseif event == "QUEST_PROGRESS" then
         ConfirmPendingQuest("active")
+        if CurrentQuestIsRepeatable() then return end
         DeferQuestAction(function(latest)
             if latest.autoQuestTurnIn and IsQuestCompletable and IsQuestCompletable()
                 and CompleteQuest then
@@ -478,6 +542,7 @@ local function OnQuestAutomation(_, event, arg1)
             end
         end)
     elseif event == "QUEST_COMPLETE" and p.autoQuestTurnIn and GetNumQuestChoices and GetQuestReward then
+        if CurrentQuestIsRepeatable() then return end
         DeferQuestAction(function(latest)
             if not latest.autoQuestTurnIn or not GetNumQuestChoices or not GetQuestReward then return end
             local choices = GetNumQuestChoices() or 0

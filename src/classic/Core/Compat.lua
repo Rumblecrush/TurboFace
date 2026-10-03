@@ -629,6 +629,17 @@ API.IsQuestComplete = pick(IsQuestComplete, C_QuestLog and C_QuestLog.IsComplete
     return C_QuestLog.IsComplete(questID)
 end)
 
+-- Quest-giver panels expose their currently displayed quest through this
+-- global, not through the selected quest-log entry.  It is available after
+-- QUEST_DETAIL / QUEST_PROGRESS / QUEST_COMPLETE and lets shared automation
+-- keep consumable repeatable hand-ins under player control.
+API.GetCurrentQuestID = pick(GetQuestID)
+
+-- Gossip records normally carry this flag directly, but active legacy rows do
+-- not.  Keep the canonical quest-ID predicate at the compatibility boundary
+-- so automation can apply the same repeatable safety rule to every surface.
+API.IsRepeatableQuest = pick(C_QuestLog and C_QuestLog.IsRepeatableQuest)
+
 -- 1.15.9 baseline audit: neither the QuestReadyForTurnIn global nor
 -- C_QuestLog.ReadyForTurnIn exists on the 2.5.6-like surface — the era-correct
 -- form is IsQuestComplete (close enough for the XP-overlay "turn-in ready"
