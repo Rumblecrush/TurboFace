@@ -33,6 +33,8 @@ local API = ns.API
 local AuraContainerSortMethod = AuraContainerSortMethod
 local AuraContainerSortDirection = AuraContainerSortDirection
 local AnchorUtil = AnchorUtil
+local COMBO_ROW_HEIGHT = 11
+local NAME_CLEARANCE = 15
 
 do
     local getTemplate = C_XMLUtil and C_XMLUtil.GetTemplateInfo
@@ -284,6 +286,50 @@ local function Direction(grow)
     return AnchorUtil.FlowDirection.Right, "BOTTOMLEFT", "BOTTOMLEFT", "TOPLEFT"
 end
 
+-- The old fixed combo row was implicitly covered by a static aura anchor. The
+-- movable combo row can cross the name baseline, so reserve only the portion
+-- of the shown row that still extends above that baseline. The combo frame is
+-- addon-owned and UpdateCombo runs before FA:Bind, making IsShown safe here.
+local function ComboReservation(st)
+    if not (st and st.combo and st.combo:IsShown()) then return 0 end
+    local y = tonumber(ns.c_comboPointYOffset) or 3
+    return math.max(0, COMBO_ROW_HEIGHT + y)
+end
+
+local function PositionAnchorGuide(controller, st, hp)
+    if not (controller and st and hp) then return nil end
+    local guide = controller.anchorGuide
+    if not guide then
+        guide = CreateFrame("Frame", nil, st.overlay or UIParent)
+        guide:SetSize(1, 1)
+        guide:EnableMouse(false)
+        controller.anchorGuide = guide
+    end
+
+    local isDebuff = controller.kind == "debuff"
+    local grow = isDebuff and ns.c_growDirection or ns.c_buffGrowDirection
+    local _, _, point, relativePoint = Direction(grow)
+    local x = tonumber(isDebuff and ns.c_debuffXOffset or ns.c_buffXOffset) or 0
+    local y = tonumber(isDebuff and ns.c_debuffYOffset or ns.c_buffYOffset) or 0
+    y = y + NAME_CLEARANCE + ComboReservation(st)
+    if not isDebuff and ns.c_showDebuffs ~= false then
+        y = y + (tonumber(ns.c_debuffIconHeight) or 20) + 4
+    end
+
+    guide:ClearAllPoints()
+    if grow == "CENTER" then
+        -- The detached overlay center is the established health-top baseline.
+        -- Moving this addon-owned guide lets options update live without ever
+        -- reanchoring a secret-bound AuraContainer.
+        local centerAnchor = st.overlay or st.root or hp
+        guide:SetPoint("CENTER", centerAnchor, "CENTER", x, y)
+    else
+        guide:SetPoint(point, hp, relativePoint, x, y)
+    end
+    guide:Show()
+    return guide, grow, point
+end
+
 local function CandidateBase(minimum, maximum)
     local candidate = {excludeSpellIDs = CopySet(ns.AuraBlacklist)}
     minimum = tonumber(minimum) or 0
@@ -357,7 +403,10 @@ local function ConfigureController(controller, st, hp)
     -- state. All button/layout styling therefore happens exactly once, before
     -- SetUnit. General nameplate refreshes must never restyle bound buttons or
     -- reconfigure their container.
-    if controller.configured then return true end
+    if controller.configured then
+        PositionAnchorGuide(controller, st, hp)
+        return true
+    end
 
     controller.width = tonumber(isDebuff and ns.c_debuffIconWidth or ns.c_buffIconWidth) or 20
     controller.height = tonumber(isDebuff and ns.c_debuffIconHeight or ns.c_buffIconHeight) or controller.width
@@ -415,25 +464,14 @@ local function ConfigureController(controller, st, hp)
         horizontal, AnchorUtil.FlowDirection.Up)
     Safe(kind .. " flow-size", controller.frame, "SetFlowLayoutMaximumLineSize", layout.maximumLineSize)
 
+    local guide, positionedGrow, point = PositionAnchorGuide(controller, st, hp)
+    if not guide then return false end
     controller.frame:ClearAllPoints()
-    local x = tonumber(isDebuff and ns.c_debuffXOffset or ns.c_buffXOffset) or 0
-    local y = tonumber(isDebuff and ns.c_debuffYOffset or ns.c_buffYOffset) or 0
-    y = y + 15
-    if not isDebuff and ns.c_showDebuffs ~= false then
-        y = y + (tonumber(ns.c_debuffIconHeight) or 20) + 4
-    end
-    if grow == "CENTER" then
-        -- The native HP fill can be narrower or horizontally offset within the
-        -- full nameplate chassis. Forever's detached overlay is centered on the
-        -- pooled nameplate root without measuring protected geometry, so use it
-        -- as the horizontal reference for centered aura rows. Its center sits
-        -- on the established health-top baseline; LEFT/RIGHT modes below remain
-        -- intentionally tied to the HP edges.
-        local centerAnchor = st and (st.overlay or st.root) or hp
-        controller.frame:SetPoint("BOTTOM", centerAnchor, "CENTER", x, y)
+    if positionedGrow == "CENTER" then
+        controller.frame:SetPoint("BOTTOM", guide, "CENTER", 0, 0)
         Safe(kind .. " center-anchor", controller.frame, "SetFlowLayoutAnchorPoint", "BOTTOMLEFT")
     else
-        controller.frame:SetPoint(point, hp, relativePoint, x, y)
+        controller.frame:SetPoint(point, guide, point, 0, 0)
     end
     controller.configured = true
     return true
@@ -443,6 +481,7 @@ local function DisableController(controller)
     if not controller then return end
     Safe(controller.kind .. " disable", controller.frame, "SetEnabled", false)
     controller.frame:Hide()
+    if controller.anchorGuide then controller.anchorGuide:Hide() end
     controller.unit = nil
     controller.active = false
 end

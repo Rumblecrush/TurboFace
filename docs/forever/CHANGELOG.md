@@ -1,5 +1,17 @@
 # TurboFace Forever Changelog
 
+## 0.19.1 — nameplate spacing and starter ranks
+
+- Fixed detached nameplate debuffs retaining their old fixed vertical anchor while the new combo
+  row moved through the plate. Aura containers now bind once to addon-owned movable guide frames;
+  the guides reserve only the portion of the combo row that remains above the name baseline. This
+  keeps default-top combo points clear of debuffs, returns debuffs to normal name clearance when
+  combo points move below the plate, and never reanchors a secret-bound AuraContainer.
+- Fixed starter-ability Rank 2 rows such as Sinister Strike and Heroic Strike disappearing from
+  Class Training while Rank 3 remained visible. Ranked learned-state now matches the exact spell ID
+  in each live spellbook slot against the class catalog; when a trainer family starts at Rank 2, its
+  unmatched built-in spell is treated as Rank 1 instead of trusting Forever's family rank alias.
+
 ## 0.19.0 — safer automation, trainer ranks, and combo points
 
 - Reworked the detached target-nameplate combo points into Blizzard-inspired layered pips: every

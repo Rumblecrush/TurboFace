@@ -5,12 +5,12 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
 **Last updated:** 2026-10-03
-**Current addon version:** 0.19.0
+**Current addon version:** 0.19.1
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.19.0
+**Source baseline:** TurboFace unified 0.19.1
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -520,6 +520,12 @@ Current safe/adapted surfaces include, subject to their own live capabilities:
 - enemy swing presentation;
 - detached Blizzard-owned aura rows.
 
+The detached aura rows anchor once to addon-owned per-controller guide frames before their
+`AuraContainer` binds secret aura state. Combo-point vertical movement updates those guides rather
+than reanchoring a bound container. The guide reserves only the visible part of the 11px combo row
+that extends above the name baseline (`max(0, 11 + comboPointYOffset)`), so the normal name clearance
+returns automatically as the combo row moves beneath the plate.
+
 ### 9.4 Threat percentage
 
 Threat results can be secret when the mob token is `nameplateN` but readable through stable public aliases. The adapter therefore maps visible plates to target/focus/mouseover/pet-target/group-member-target aliases using secret-safe identity checks, then requests only readable threat fields.
@@ -910,7 +916,10 @@ captured into the account-wide class catalog when the legacy boolean is stale. A
 LibProfessionDB identity scrub removes recipe IDs written by older builds. Class learned state uses
 exact spell identity for unranked abilities. Ranked entries use the cached live spellbook
 name/rank snapshot as their authority because Forever can report every numeric ID in a learned
-rank family as known; the family predicate must not promote future ranks into Already Known.
+rank family as known; the family predicate must not promote future ranks into Already Known. The
+snapshot also records each spellbook slot's exact spell ID through the compatibility facade and
+maps it to the active class catalog. If a trainer family begins at Rank 2, an unmatched spellbook
+ID is its built-in Rank 1 even when Forever's family subtext claims otherwise.
 
 ### 15.3 Load-on-demand spell data
 
