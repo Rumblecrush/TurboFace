@@ -5,12 +5,12 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
 **Last updated:** 2026-10-03
-**Current addon version:** 0.18.8
+**Current addon version:** 0.19.0
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.18.8
+**Source baseline:** TurboFace unified 0.19.0
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -511,7 +511,8 @@ The Forever adapter owns the safe augmented path. It keeps per-plate state outsi
 Current safe/adapted surfaces include, subject to their own live capabilities:
 
 - selected/non-selected presentation amendments that use safe manager/CVar boundaries;
-- combo presentation;
+- detached combo presentation using addon-owned layered rim, black-well, red-fill, and specular-highlight textures;
+- a portable `-50..3` combo-row Y offset whose default/max `3` retains the above-name placement;
 - friendly NPC title/job information;
 - detached health text;
 - detached overlapping power fill using native curve evaluation;
@@ -907,8 +908,9 @@ Profession ownership is derived from the trainer services' profession skill line
 the surviving `IsTradeskillTrainer()` boolean. This prevents Forever profession recipes from being
 captured into the account-wide class catalog when the legacy boolean is stale. A one-time
 LibProfessionDB identity scrub removes recipe IDs written by older builds. Class learned state uses
-exact spell identity first and a cached live spellbook name/rank snapshot second, covering clients
-that replace older ranks and no longer report those IDs as known.
+exact spell identity for unranked abilities. Ranked entries use the cached live spellbook
+name/rank snapshot as their authority because Forever can report every numeric ID in a learned
+rank family as known; the family predicate must not promote future ranks into Already Known.
 
 ### 15.3 Load-on-demand spell data
 
@@ -1145,6 +1147,7 @@ Automation owns policy and lifecycle; client actions live behind `ns.API`:
 - repair summaries use `API.GetCoinText()`;
 - quest turn-in readiness uses `API.QuestReadyForTurnIn()`;
 - repeatable-quest detection uses `API.IsRepeatableQuest()` alongside the live gossip row marker;
+- daily/weekly classification and quest purchase costs use Compat-owned current-panel queries;
 - event drift remains guarded through `API.RegisterEvent()`.
 
 The shared quest controller keeps serialized selection confirmation/retry behavior. This hardening is
@@ -1161,9 +1164,17 @@ Repeatable quest interactions remain manual even when both quest toggles are ena
 controller skips repeatable rows on modern gossip, legacy gossip, and Quest Greeting, then checks
 the current quest-giver panel again before accepting, completing, or rewarding a player-opened
 repeatable. This prevents consumable repeatables such as Blood Shards from chaining through a stack.
+Daily and weekly frequencies use the same two-stage manual boundary, while remote
+`QUEST_AUTOCOMPLETE` is not registered. The accept and turn-in settings remain independent and own
+only ordinary one-time quests. One-time turn-ins that require gold or currency also remain manual,
+and quests Blizzard has already auto-accepted are not accepted a second time.
 It also yields before selecting any quest at an NPC that exposes Blizzard's vendor gossip service,
 so a full-bag player can open the vendor menu rather than being forced into a quest detail panel
 that cannot be accepted.
+
+NPC GUIDs are normalized through `API.CanAccessValue()` before the interaction controller stores
+or compares them. An inaccessible Forever GUID is treated as absent; lifecycle events still reset
+the bounded interaction state without inspecting the secret scalar.
 
 System Tweaks also uses one shared implementation. Fast loot guards the loot APIs, resolves either
 modern or legacy loot-method identity, preserves master-loot thresholds, skips locked slots, and

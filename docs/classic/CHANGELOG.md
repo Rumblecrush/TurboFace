@@ -1,7 +1,18 @@
 # TurboFace Classic Changelog
 
-## Next — Quest automation safeguards
+## 0.19.0 — safer automation, trainer ranks, and combo points
 
+- Reworked target-nameplate combo points into Blizzard-inspired layered pips: every slot now has a
+  gold-toned 11px circular rim and opaque 9px black empty well, while earned points add a 7px red center
+  with an upper-right specular highlight for the native rounded-gem appearance. The presentation
+  remains entirely addon-owned and does not depend on undocumented client atlases.
+- Added a live Combo Point Y Offset slider from `-50` to `3`. The existing above-name position is
+  retained as the default and maximum, while players can move the row down beneath the nameplate.
+- Made Class Training rank detection consistently spellbook-authoritative. Exact known-spell APIs
+  remain authoritative for unranked abilities, while ranked entries use the live spellbook's
+  displayed rank so a client that aliases a spell family cannot hide unlearned higher ranks. The
+  explicit `(Rank N)` row suffix falls back to catalog metadata when localized spell subtext has
+  not loaded yet and is positioned one pixel left and two pixels higher beside the spell name.
 - Auto Quest Accept and Turn-in now leave all repeatable quests manual. TurboFace uses the
   native repeatable flag/quest-ID predicate on modern gossip, legacy gossip, and Quest Greeting
   surfaces, so consumable hand-ins such as the Barrens Blood Shards cannot cascade through an
@@ -9,6 +20,12 @@
 - Quest automation also yields when an NPC offers a vendor service, preserving immediate access to
   selling when the NPC happens to offer a quest as well — including when the player needs a free
   bag slot before accepting it.
+- Daily and weekly quests now share the repeatable-quest manual boundary for both acceptance and
+  turn-in. Frequency is checked on gossip/Quest Greeting rows and checked again on the live quest
+  panel so incomplete or stale list metadata cannot opt a recurring quest into automation.
+- One-time quest turn-ins that spend gold or currency remain manual. Blizzard-auto-accepted quests
+  are no longer redundantly accepted, and remote `QUEST_AUTOCOMPLETE` remains outside TurboFace's
+  registered automation events.
 
 ## 0.18.8 — Quick Setup Blizzard settings
 

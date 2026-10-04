@@ -100,14 +100,21 @@ function NP.ReleaseDotPredictionPlate(unit)
 end
 
 -- =============================================================================
--- TARGET NAMEPLATE COMBO POINTS (Rogue / Druid) -- 5 red dots between the name
--- and the debuff row on the current target's nameplate. Single red when filled,
--- dim when empty; all 5 slots shown. A Nameplates-owned singleton driver runs
+-- TARGET NAMEPLATE COMBO POINTS (Rogue / Druid) -- 5 layered pips between the
+-- name and the debuff row on the current target's nameplate. Each slot keeps a
+-- warm metallic rim and black well; earned points add a smaller red center.
+-- All 5 slots remain visible. A Nameplates-owned singleton driver runs
 -- only while an eligible target plate exists; Unit Frames are not a dependency.
 -- =============================================================================
-local TF_CP_TEX    = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
-local TF_CP_FILLED = { 0.90, 0.10, 0.10, 1.00 }
-local TF_CP_EMPTY  = { 0.35, 0.35, 0.35, 0.45 }
+local TF_CP_TEX        = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
+local TF_CP_SIZE       = 11
+local TF_CP_INNER_SIZE = 9
+local TF_CP_FILL_SIZE  = 7
+local TF_CP_GAP        = 2
+local TF_CP_BORDER     = { 0.72, 0.58, 0.16, 1.00 }
+local TF_CP_BACKGROUND = { 0.015, 0.015, 0.015, 1.00 }
+local TF_CP_FILLED     = { 0.90, 0.06, 0.04, 1.00 }
+local TF_CP_HIGHLIGHT  = { 1.00, 0.72, 0.32, 0.90 }
 local _, TF_PLAYER_CLASS = ns.API.ReadUnitClass("player")
 local TF_COMBO_CLASS = (TF_PLAYER_CLASS == "ROGUE" or TF_PLAYER_CLASS == "DRUID")
 local TF_IS_DRUID    = (TF_PLAYER_CLASS == "DRUID")
@@ -119,14 +126,36 @@ local function EnsureTargetCombo(plate)
     c:SetFrameLevel((plate:GetFrameLevel() or 1) + 15)
     c:EnableMouse(false)
     c.dots = {}
-    local size = 7 -- fixed 7px dots
-    local gap = 2
-    c:SetSize(MAX_CP * size + (MAX_CP - 1) * gap, size)
+    c:SetSize(MAX_CP * TF_CP_SIZE + (MAX_CP - 1) * TF_CP_GAP, TF_CP_SIZE)
     for i = 1, MAX_CP do
-        local d = c:CreateTexture(nil, "OVERLAY")
-        d:SetTexture(TF_CP_TEX)
-        d:SetSize(size, size)
-        d:SetPoint("LEFT", c, "LEFT", (i - 1) * (size + gap), 0)
+        local d = CreateFrame("Frame", nil, c)
+        d:SetSize(TF_CP_SIZE, TF_CP_SIZE)
+        d:SetPoint("LEFT", c, "LEFT", (i - 1) * (TF_CP_SIZE + TF_CP_GAP), 0)
+
+        d.border = d:CreateTexture(nil, "BACKGROUND")
+        d.border:SetTexture(TF_CP_TEX)
+        d.border:SetAllPoints()
+        d.border:SetVertexColor(TF_CP_BORDER[1], TF_CP_BORDER[2], TF_CP_BORDER[3], TF_CP_BORDER[4])
+
+        d.background = d:CreateTexture(nil, "ARTWORK")
+        d.background:SetTexture(TF_CP_TEX)
+        d.background:SetSize(TF_CP_INNER_SIZE, TF_CP_INNER_SIZE)
+        d.background:SetPoint("CENTER")
+        d.background:SetVertexColor(TF_CP_BACKGROUND[1], TF_CP_BACKGROUND[2], TF_CP_BACKGROUND[3], TF_CP_BACKGROUND[4])
+
+        d.fill = d:CreateTexture(nil, "OVERLAY")
+        d.fill:SetTexture(TF_CP_TEX)
+        d.fill:SetSize(TF_CP_FILL_SIZE, TF_CP_FILL_SIZE)
+        d.fill:SetPoint("CENTER")
+        d.fill:SetVertexColor(TF_CP_FILLED[1], TF_CP_FILLED[2], TF_CP_FILLED[3], TF_CP_FILLED[4])
+        d.fill:Hide()
+
+        d.highlight = d:CreateTexture(nil, "OVERLAY")
+        d.highlight:SetTexture(TF_CP_TEX)
+        d.highlight:SetSize(3, 3)
+        d.highlight:SetPoint("CENTER", d.fill, "CENTER", 1.5, 1.5)
+        d.highlight:SetVertexColor(TF_CP_HIGHLIGHT[1], TF_CP_HIGHLIGHT[2], TF_CP_HIGHLIGHT[3], TF_CP_HIGHLIGHT[4])
+        d.highlight:Hide()
         c.dots[i] = d
     end
     plate.tfCombo = c
@@ -149,7 +178,10 @@ end
 -- the debuff/buff row offset so they don't overlap the dots. 0 when none shown.
 function ns.ComboDebuffOffset(plate)
     if plate and plate.tfCombo and plate.tfCombo:IsShown() then
-        return (plate.tfCombo:GetHeight() or 0) + 3
+        -- Reserve only the portion that still extends above the name anchor.
+        -- Once the row is moved fully below it, the aura row gets all of its
+        -- original top space back.
+        return math_max(0, (plate.tfCombo:GetHeight() or 0) + (ns.c_comboPointYOffset or 3))
     end
     return 0
 end
@@ -187,12 +219,13 @@ function ns.UpdateTargetComboPoints()
     if not c then return end
     c:ClearAllPoints()
     local nameAnchor = ns.GetNameplateNameAnchor(plate, true) or plate.hp or plate
-    c:SetPoint("BOTTOM", nameAnchor, "TOP", 0, 3)   -- above Blizzard name, below debuffs
+    c:SetPoint("BOTTOM", nameAnchor, "TOP", 0, ns.c_comboPointYOffset or 3)
 
     local cp = GetComboPoints("player", "target") or 0
     for i = 1, MAX_CP do
-        local col = (i <= cp) and TF_CP_FILLED or TF_CP_EMPTY
-        c.dots[i]:SetVertexColor(col[1], col[2], col[3], col[4])
+        local filled = i <= cp
+        c.dots[i].fill:SetShown(filled)
+        c.dots[i].highlight:SetShown(filled)
     end
     c:Show()
     if not plate._tfComboShown then

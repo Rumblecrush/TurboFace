@@ -161,6 +161,26 @@ Trainer:AddBuilder(function()
         return (subtext and subtext ~= "") and subtext or nil
     end
 
+    local function GetEntryRankText(entry)
+        local subtext = GetLocalizedRankText(entry and entry.spellID)
+        if subtext then return subtext end
+        if not entry or not entry.hasRealRank then return nil end
+        local rankNum = tonumber(entry.rankNum)
+        if not rankNum then return nil end
+
+        -- Unlearned Forever spells can have numeric catalog rank metadata before
+        -- C_Spell has loaded their localized subtext. Preserve the visible
+        -- "(Rank N)" contract instead of silently dropping the rank suffix.
+        local pattern = type(_G.RANK) == "string" and _G.RANK or "Rank %d"
+        if pattern:find("%", 1, true) then
+            local ok, text = pcall(string.format, pattern, rankNum)
+            if ok and type(text) == "string" and text ~= "" then return text end
+        elseif pattern ~= "" then
+            return pattern .. " " .. rankNum
+        end
+        return "Rank " .. rankNum
+    end
+
     function Trainer:EntryMatchesSearch(entry, search)
         if not search or search == "" then return true end
         if entry.name and entry.name:lower():find(search, 1, true) then return true end
@@ -194,7 +214,7 @@ Trainer:AddBuilder(function()
             end
         end
 
-        local rankSubtext = GetLocalizedRankText(entry.spellID)
+        local rankSubtext = GetEntryRankText(entry)
         local rankText = rankSubtext and (" " .. rankSubtext) or ""
         local info = UIDropDownMenu_CreateInfo()
         info.text = (entry.displayName or entry.name) .. rankText
@@ -456,7 +476,7 @@ Trainer:AddBuilder(function()
             icon:SetTexture(entry.icon)
             if icon.SetDesaturated then icon:SetDesaturated(false) end
             if icon.SetVertexColor then icon:SetVertexColor(1, 1, 1, 1) end
-            local rankSubtext = GetLocalizedRankText(entry.spellID)
+            local rankSubtext = GetEntryRankText(entry)
             local nameColor
             if nativeTrainerCard then
                 nameColor = elementData.dimName and Colors.DIM_NAME or "|cffffd100"
@@ -560,7 +580,7 @@ Trainer:AddBuilder(function()
                 nameFS:SetWidth(math.min((nameFS:GetStringWidth() or 0) + 1, maxNameWidth))
                 if rankFS:IsShown() then
                     rankFS:SetWidth(rankWidth + 1)
-                    rankFS:SetPoint("BOTTOMLEFT", nameFS, "BOTTOMRIGHT", 5, -1)
+                    rankFS:SetPoint("BOTTOMLEFT", nameFS, "BOTTOMRIGHT", 4, 1)
                 end
                 levelFS:ClearAllPoints()
                 levelFS:SetPoint("LEFT", nameFS, "LEFT", 0, -19)
@@ -579,7 +599,7 @@ Trainer:AddBuilder(function()
                 nameFS:SetWidth(nameWidth)
                 if rankFS:IsShown() then
                     rankFS:SetWidth(rankWidth + 1)
-                    rankFS:SetPoint("LEFT", nameFS, "RIGHT", 0, 0)
+                    rankFS:SetPoint("LEFT", nameFS, "RIGHT", -1, 2)
                 end
             end
 

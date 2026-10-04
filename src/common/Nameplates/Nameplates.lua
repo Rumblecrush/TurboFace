@@ -293,6 +293,10 @@ function ns:UpdateDBCache()
     ns.c_reactiveOffsetY   = RS("OffsetY", 0)
 
     ns.c_showComboPoints = db.showComboPoints ~= false
+    local comboPointYOffset = tonumber(db.comboPointYOffset) or 3
+    if comboPointYOffset < -50 then comboPointYOffset = -50
+    elseif comboPointYOffset > 3 then comboPointYOffset = 3 end
+    ns.c_comboPointYOffset = comboPointYOffset
     ns.c_npcTitleCache = (TurboFaceCacheDB and TurboFaceCacheDB.npcTitles) or {}
 
     -- Quest objective icon settings remain independent augmentation.

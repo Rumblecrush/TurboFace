@@ -59,6 +59,14 @@ local PowerBarColor = PowerBarColor
 local ROOT = "Interface\\AddOns\\TurboFace\\Textures\\BubbleNameplates\\"
 local SOUND_ROOT = "Interface\\AddOns\\TurboFace\\Sounds\\BubbleNameplates\\"
 local TEX_COMBO = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
+local COMBO_SIZE = 11
+local COMBO_INNER_SIZE = 9
+local COMBO_FILL_SIZE = 7
+local COMBO_GAP = 2
+local COMBO_BORDER = { 0.72, 0.58, 0.16, 1.00 }
+local COMBO_BACKGROUND = { 0.015, 0.015, 0.015, 1.00 }
+local COMBO_FILLED = { 0.90, 0.06, 0.04, 1.00 }
+local COMBO_HIGHLIGHT = { 1.00, 0.72, 0.32, 0.90 }
 local SOUND_GAIN = SOUND_ROOT .. "GainAggro.mp3"
 local SOUND_LOSS = SOUND_ROOT .. "LoseAggro.mp3"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -680,14 +688,38 @@ end
 local function EnsureCombo(st)
     if st.combo then return st.combo end
     local f = CreateFrame("Frame", nil, EnsureOverlay(st))
-    f:SetSize(43, 7)
+    f:SetSize(MAX_CP * COMBO_SIZE + (MAX_CP - 1) * COMBO_GAP, COMBO_SIZE)
     f:EnableMouse(false)
     f.dots = {}
     for i = 1, MAX_CP do
-        local d = f:CreateTexture(nil, "OVERLAY")
-        d:SetTexture(TEX_COMBO)
-        d:SetSize(7, 7)
-        d:SetPoint("LEFT", f, "LEFT", (i - 1) * 9, 0)
+        local d = CreateFrame("Frame", nil, f)
+        d:SetSize(COMBO_SIZE, COMBO_SIZE)
+        d:SetPoint("LEFT", f, "LEFT", (i - 1) * (COMBO_SIZE + COMBO_GAP), 0)
+
+        d.border = d:CreateTexture(nil, "BACKGROUND")
+        d.border:SetTexture(TEX_COMBO)
+        d.border:SetAllPoints()
+        d.border:SetVertexColor(COMBO_BORDER[1], COMBO_BORDER[2], COMBO_BORDER[3], COMBO_BORDER[4])
+
+        d.background = d:CreateTexture(nil, "ARTWORK")
+        d.background:SetTexture(TEX_COMBO)
+        d.background:SetSize(COMBO_INNER_SIZE, COMBO_INNER_SIZE)
+        d.background:SetPoint("CENTER")
+        d.background:SetVertexColor(COMBO_BACKGROUND[1], COMBO_BACKGROUND[2], COMBO_BACKGROUND[3], COMBO_BACKGROUND[4])
+
+        d.fill = d:CreateTexture(nil, "OVERLAY")
+        d.fill:SetTexture(TEX_COMBO)
+        d.fill:SetSize(COMBO_FILL_SIZE, COMBO_FILL_SIZE)
+        d.fill:SetPoint("CENTER")
+        d.fill:SetVertexColor(COMBO_FILLED[1], COMBO_FILLED[2], COMBO_FILLED[3], COMBO_FILLED[4])
+        d.fill:Hide()
+
+        d.highlight = d:CreateTexture(nil, "OVERLAY")
+        d.highlight:SetTexture(TEX_COMBO)
+        d.highlight:SetSize(3, 3)
+        d.highlight:SetPoint("CENTER", d.fill, "CENTER", 1.5, 1.5)
+        d.highlight:SetVertexColor(COMBO_HIGHLIGHT[1], COMBO_HIGHLIGHT[2], COMBO_HIGHLIGHT[3], COMBO_HIGHLIGHT[4])
+        d.highlight:Hide()
         f.dots[i] = d
     end
     st.combo = f
@@ -710,10 +742,11 @@ local function UpdateCombo(st, nameRegion, hp)
     local cp = API.GetComboPoints and API.GetComboPoints("player", "target") or nil
     if type(cp) ~= "number" then f:Hide(); return false end
     f:ClearAllPoints()
-    f:SetPoint("BOTTOM", nameRegion or hp or st.root, "TOP", 0, 3)
+    f:SetPoint("BOTTOM", nameRegion or hp or st.root, "TOP", 0, ns.c_comboPointYOffset or 3)
     for i = 1, MAX_CP do
-        if i <= cp then f.dots[i]:SetVertexColor(0.90, 0.10, 0.10, 1)
-        else f.dots[i]:SetVertexColor(0.35, 0.35, 0.35, 0.45) end
+        local filled = i <= cp
+        f.dots[i].fill:SetShown(filled)
+        f.dots[i].highlight:SetShown(filled)
     end
     f:Show()
     return true

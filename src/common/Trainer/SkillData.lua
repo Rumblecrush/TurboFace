@@ -42,16 +42,22 @@ function Trainer:GetKnownSpellbookRanks()
 end
 
 function Trainer:IsClassSpellKnown(spellID, name, rankNum, hasRealRank)
-    if spellID and ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then
-        return true
-    end
     if type(name) ~= "string" or name == "" then
         name = spellID and GetSpellInfo and GetSpellInfo(spellID) or nil
     end
     local knownRank = name and self:GetKnownSpellbookRanks()[name] or nil
-    if not knownRank then return false end
-    if hasRealRank then return knownRank >= (tonumber(rankNum) or 1) end
-    return true
+    if hasRealRank then
+        -- Forever's retail-derived IsSpellKnown/C_SpellBook predicate can
+        -- answer true for every ID in a learned rank chain. It therefore says
+        -- Rend Rank 2 is known when the spellbook contains only Rank 1. The
+        -- spellbook's displayed subtext is the rank authority; never let the
+        -- family-level predicate promote an unlearned rank into Already Known.
+        return knownRank ~= nil and knownRank >= (tonumber(rankNum) or 1)
+    end
+    if spellID and ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then
+        return true
+    end
+    return knownRank ~= nil
 end
 
 -- =============================================================================

@@ -975,6 +975,15 @@ end)
 -- keep consumable repeatable hand-ins under player control.
 API.GetCurrentQuestID = pick(GetQuestID)
 
+-- Quest automation deliberately owns only ordinary one-time quests. Keep the
+-- current quest-panel classification and purchase-cost queries behind Compat
+-- so secret-value normalization remains centralized on Forever.
+API.IsCurrentQuestDaily = pick(QuestIsDaily)
+API.IsCurrentQuestWeekly = pick(QuestIsWeekly)
+API.QuestGetAutoAccept = pick(QuestGetAutoAccept)
+API.GetQuestMoneyRequired = pick(GetQuestMoneyToGet)
+API.GetNumQuestRequiredCurrencies = pick(GetNumQuestCurrencies)
+
 -- Gossip records normally carry this flag directly, but active legacy rows do
 -- not.  Keep the canonical quest-ID predicate at the compatibility boundary
 -- so automation can apply the same repeatable safety rule to every surface.

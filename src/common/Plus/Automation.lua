@@ -155,27 +155,104 @@ end
 -- Quest accept / turn-in
 -- ---------------------------------------------------------------------------
 
--- A repeatable quest can deliberately consume an item stack (for example,
--- Blood Shards of Agamaggan).  Never turn a single interaction into an
--- unbounded item hand-in loop: repeatable quests stay entirely player-driven,
--- whether they arrive through modern gossip, a legacy list, or a Quest Greeting.
+-- A recurring quest can deliberately consume an item stack (for example,
+-- Blood Shards of Agamaggan). Never turn a single interaction into an
+-- unbounded hand-in loop: repeatable, daily, and weekly quests stay entirely
+-- player-driven, whether they arrive through gossip or a Quest Greeting.
 local function IsReadableTrue(value)
     if ns.API.CanAccessValue and not ns.API.CanAccessValue(value) then return false end
     return value == true or value == 1
 end
 
-local function QuestIsRepeatable(quest, questID)
-    if type(quest) == "table" and IsReadableTrue(quest.repeatable) then return true end
-    questID = questID or (type(quest) == "table" and quest.questID)
-    if not questID or not ns.API.IsRepeatableQuest then return false end
-    local ok, repeatable = pcall(ns.API.IsRepeatableQuest, questID)
-    return ok and IsReadableTrue(repeatable)
+local function IsReadableValue(value)
+    return not ns.API.CanAccessValue or ns.API.CanAccessValue(value)
 end
 
-local function CurrentQuestIsRepeatable()
-    if not ns.API.GetCurrentQuestID then return false end
-    local ok, questID = pcall(ns.API.GetCurrentQuestID)
-    return ok and QuestIsRepeatable(nil, questID)
+local questFrequency = Enum and Enum.QuestFrequency
+local DAILY_QUEST = questFrequency and questFrequency.Daily or 1
+local WEEKLY_QUEST = questFrequency and questFrequency.Weekly or 2
+
+local function FrequencyNeedsManual(value)
+    if not IsReadableValue(value) then return true end
+    return value == DAILY_QUEST or value == WEEKLY_QUEST
+end
+
+local function QuestIsRepeatable(quest, questID)
+    if type(quest) == "table" and IsReadableTrue(quest.repeatable) then return true end
+    if not IsReadableValue(questID) then return true end
+    if questID == nil and type(quest) == "table" then
+        questID = quest.questID
+        if not IsReadableValue(questID) then return true end
+    end
+    if not questID or not ns.API.IsRepeatableQuest then return false end
+    local ok, repeatable = pcall(ns.API.IsRepeatableQuest, questID)
+    return not ok or not IsReadableValue(repeatable) or IsReadableTrue(repeatable)
+end
+
+local function QuestLogFrequency(questID)
+    if not IsReadableValue(questID) then return nil, true end
+    if not questID or not ns.API.GetQuestLogIndexByID or not ns.API.GetQuestLogTitle then return nil end
+    local ok, index = pcall(ns.API.GetQuestLogIndexByID, questID)
+    if not ok or not IsReadableValue(index) or type(index) ~= "number" or index <= 0 then return nil end
+    local values = { pcall(ns.API.GetQuestLogTitle, index) }
+    if not values[1] then return nil end
+    local frequency = values[8]
+    if not IsReadableValue(frequency) then return false, true end
+    return frequency
+end
+
+local function QuestNeedsManual(quest, questID)
+    if QuestIsRepeatable(quest, questID) then return true end
+    if questID == nil and type(quest) == "table" then questID = quest.questID end
+    if not IsReadableValue(questID) then return true end
+    if type(quest) == "table" and FrequencyNeedsManual(quest.frequency) then return true end
+    local frequency, unreadable = QuestLogFrequency(questID)
+    return unreadable == true or FrequencyNeedsManual(frequency)
+end
+
+local function CurrentQuestNeedsManual()
+    local questID
+    if ns.API.GetCurrentQuestID then
+        local ok, value = pcall(ns.API.GetCurrentQuestID)
+        if not ok or not IsReadableValue(value) then return true end
+        questID = value
+    end
+    if QuestNeedsManual(nil, questID) then return true end
+
+    for _, predicate in ipairs({ ns.API.IsCurrentQuestDaily, ns.API.IsCurrentQuestWeekly }) do
+        if type(predicate) == "function" then
+            local ok, recurring = pcall(predicate)
+            if not ok or not IsReadableValue(recurring) then return true end
+            if IsReadableTrue(recurring) then return true end
+        end
+    end
+    return false
+end
+
+local function ReadNPCGUID()
+    if not UnitGUID then return nil end
+    local guid = UnitGUID("npc")
+    if not IsReadableValue(guid) then return nil end
+    return guid
+end
+
+local function ReadableNumberCall(fn, ...)
+    if type(fn) ~= "function" then return nil, false end
+    local ok, value = pcall(fn, ...)
+    if not ok or not IsReadableValue(value) then return nil, true end
+    if type(value) ~= "number" then return nil, false end
+    return value, false
+end
+
+-- A one-time quest can still spend gold or currencies. Those turn-ins stay
+-- manual so the completion toggle never doubles as permission to buy a quest
+-- reward. Required ordinary quest items are intentionally unaffected.
+local function CurrentQuestHasProtectedCost()
+    local money, moneyUnreadable = ReadableNumberCall(ns.API.GetQuestMoneyRequired)
+    if moneyUnreadable then return true end
+    if money and money > 0 then return true end
+    local currencies, currencyUnreadable = ReadableNumberCall(ns.API.GetNumQuestRequiredCurrencies)
+    return currencyUnreadable or (currencies ~= nil and currencies > 0)
 end
 
 -- The modern GossipOptionUIInfo type no longer has the legacy `type =
@@ -250,32 +327,53 @@ local function ResetQuestInteraction(guid)
 end
 
 local function RefreshQuestInteractionIdentity()
-    local guid = UnitGUID and UnitGUID("npc") or nil
+    local guid = ReadNPCGUID()
     if guid and guid ~= questNPCGUID then ResetQuestInteraction(guid) end
 end
 
-local function QuestEntryComplete(quest)
+local function ReadQuestID(quest)
+    if type(quest) ~= "table" then return nil, false end
+    local questID = quest.questID
+    if not IsReadableValue(questID) then return nil, false end
+    return questID, true
+end
+
+local function ReadQuestIDValue(questID)
+    if not IsReadableValue(questID) then return nil, false end
+    return questID, true
+end
+
+local function ReadableText(value)
+    if not IsReadableValue(value) or type(value) ~= "string" then return nil end
+    return value
+end
+
+local function QuestEntryComplete(quest, questID)
     if type(quest) ~= "table" then return false end
-    if quest.isComplete == true or quest.isComplete == 1 then return true end
+    if IsReadableTrue(quest.isComplete) then return true end
 
     -- Classic gossip data can lag or omit isComplete when one NPC offers a
     -- mixture of completed and in-progress quests. Reconcile the quest ID with
     -- the authoritative quest-log state before deciding which entry to open.
-    local questID = quest.questID
+    if questID == nil then
+        local readable
+        questID, readable = ReadQuestID(quest)
+        if not readable then return false end
+    end
     if not questID then return false end
     if C_QuestLog and C_QuestLog.IsComplete then
         local complete = C_QuestLog.IsComplete(questID)
-        if complete == true or complete == 1 then return true end
+        if IsReadableTrue(complete) then return true end
     end
     -- Forever can leave both gossip isComplete and C_QuestLog.IsComplete false
     -- for an NPC turn-in while its explicit readiness query is authoritative.
     if ns.API.QuestReadyForTurnIn then
         local ready = ns.API.QuestReadyForTurnIn(questID)
-        if ready == true or ready == 1 then return true end
+        if IsReadableTrue(ready) then return true end
     end
     if IsQuestComplete then
         local complete = IsQuestComplete(questID)
-        if complete == true or complete == 1 then return true end
+        if IsReadableTrue(complete) then return true end
     end
     return false
 end
@@ -331,11 +429,12 @@ local function SelectModernGossipQuest(p)
             local count = C_GossipInfo.GetNumActiveQuests and C_GossipInfo.GetNumActiveQuests() or #active
             for i = 1, count do
                 local quest = active[i]
-                if QuestEntryComplete(quest) and quest.questID
-                    and not QuestIsRepeatable(quest)
-                    and not questProcessedActive[quest.questID] then
+                local questID, readable = ReadQuestID(quest)
+                if readable and questID and QuestEntryComplete(quest, questID)
+                    and not QuestNeedsManual(quest, questID)
+                    and not questProcessedActive[questID] then
                     return SelectQuestWithConfirmation(
-                        "active", quest.questID, C_GossipInfo.SelectActiveQuest)
+                        "active", questID, C_GossipInfo.SelectActiveQuest)
                 end
             end
         end
@@ -346,11 +445,11 @@ local function SelectModernGossipQuest(p)
         if type(available) == "table" then
             for i = 1, #available do
                 local quest = available[i]
-                if type(quest) == "table" and quest.questID
-                    and not QuestIsRepeatable(quest)
-                    and not questProcessedAvailable[quest.questID] then
+                local questID, readable = ReadQuestID(quest)
+                if readable and questID and not QuestNeedsManual(quest, questID)
+                    and not questProcessedAvailable[questID] then
                     return SelectQuestWithConfirmation(
-                        "available", quest.questID, C_GossipInfo.SelectAvailableQuest)
+                        "available", questID, C_GossipInfo.SelectAvailableQuest)
                 end
             end
         end
@@ -370,10 +469,10 @@ local function SelectLegacyGossipQuest(p)
             if stride >= 4 then
                 for i = 1, count do
                     local offset = (i - 1) * stride
-                    local title = values[offset + 1]
-                    local key = type(title) == "string" and ("legacy:" .. title) or nil
+                    local title = ReadableText(values[offset + 1])
+                    local key = title and ("legacy:" .. title) or nil
                     local questID = stride >= 7 and values[offset + 7] or nil
-                    if values[offset + 4] and not QuestIsRepeatable(nil, questID)
+                    if values[offset + 4] and not QuestNeedsManual(nil, questID)
                         and (not key or not questProcessedActive[key]) then
                         if key then questProcessedActive[key] = true end
                         SelectGossipActiveQuest(i)
@@ -391,11 +490,13 @@ local function SelectLegacyGossipQuest(p)
             local stride = values and math.floor(#values / count) or 0
             for i = 1, count do
                 local offset = (i - 1) * stride
-                local title = stride > 0 and values[offset + 1] or nil
-                local key = type(title) == "string" and ("legacy:" .. title) or nil
+                local title = stride > 0 and ReadableText(values[offset + 1]) or nil
+                local key = title and ("legacy:" .. title) or nil
                 local repeatable = stride >= 5 and values[offset + 5] or nil
+                local frequency = stride >= 4 and values[offset + 4] or nil
                 local questID = stride >= 8 and values[offset + 8] or nil
-                if not IsReadableTrue(repeatable) and not QuestIsRepeatable(nil, questID)
+                if not IsReadableTrue(repeatable) and not FrequencyNeedsManual(frequency)
+                    and not QuestNeedsManual(nil, questID)
                     and (not key or not questProcessedAvailable[key]) then
                     if key then questProcessedAvailable[key] = true end
                     SelectGossipAvailableQuest(i)
@@ -419,19 +520,22 @@ local function SelectQuestGreeting(p)
             -- IsActiveQuestComplete helper may be absent entirely.
             local title, titleComplete
             if GetActiveTitle then title, titleComplete = GetActiveTitle(i) end
-            local questID = GetActiveQuestID and GetActiveQuestID(i) or nil
-            local ready = titleComplete == true or titleComplete == 1
+            title = ReadableText(title)
+            local rawQuestID
+            if GetActiveQuestID then rawQuestID = GetActiveQuestID(i) end
+            local questID, idReadable = ReadQuestIDValue(rawQuestID)
+            local ready = idReadable and IsReadableTrue(titleComplete)
             if not ready and IsActiveQuestComplete then
                 local value = IsActiveQuestComplete(i)
-                ready = value == true or value == 1
+                ready = idReadable and IsReadableTrue(value)
             end
             if not ready and questID and ns.API.QuestReadyForTurnIn then
                 local value = ns.API.QuestReadyForTurnIn(questID)
-                ready = value == true or value == 1
+                ready = IsReadableTrue(value)
             end
             local key = questID and ("greeting-id:" .. questID)
-                or (type(title) == "string" and ("greeting:" .. title) or nil)
-            if ready and not QuestIsRepeatable(nil, questID)
+                or (title and ("greeting:" .. title) or nil)
+            if ready and not QuestNeedsManual(nil, questID)
                 and (not key or not questProcessedActive[key]) then
                 key = key or ("greeting-active-index:" .. i)
                 return SelectQuestWithConfirmation("active", key, SelectActiveQuest, i)
@@ -442,13 +546,18 @@ local function SelectQuestGreeting(p)
     if p.autoQuestAccept and GetNumAvailableQuests and SelectAvailableQuest then
         local count = GetNumAvailableQuests() or 0
         for i = 1, count do
-            local title = GetAvailableTitle and GetAvailableTitle(i) or nil
-            local questID = GetAvailableQuestID and GetAvailableQuestID(i) or nil
-            local _, _, repeatable = GetAvailableQuestInfo and GetAvailableQuestInfo(i)
+            local rawTitle
+            if GetAvailableTitle then rawTitle = GetAvailableTitle(i) end
+            local title = ReadableText(rawTitle)
+            local rawQuestID
+            if GetAvailableQuestID then rawQuestID = GetAvailableQuestID(i) end
+            local questID, idReadable = ReadQuestIDValue(rawQuestID)
+            local _, frequency, repeatable = GetAvailableQuestInfo and GetAvailableQuestInfo(i)
             local key = questID and ("greeting-id:" .. questID)
-                or (type(title) == "string" and ("greeting:" .. title))
+                or (title and ("greeting:" .. title))
                 or ("greeting-available-index:" .. i)
-            if not IsReadableTrue(repeatable) and not QuestIsRepeatable(nil, questID)
+            if idReadable and not IsReadableTrue(repeatable) and not FrequencyNeedsManual(frequency)
+                and not QuestNeedsManual(nil, questID)
                 and not questProcessedAvailable[key] then
                 return SelectQuestWithConfirmation("available", key, SelectAvailableQuest, i)
             end
@@ -500,7 +609,7 @@ local function OnQuestAutomation(_, event, arg1)
     if IsShiftKeyDown and IsShiftKeyDown() then return end
 
     if event == "GOSSIP_SHOW" then
-        local guid = UnitGUID and UnitGUID("npc") or nil
+        local guid = ReadNPCGUID()
         if not questInteractionOpen then
             ResetQuestInteraction(guid)
         else
@@ -521,20 +630,30 @@ local function OnQuestAutomation(_, event, arg1)
     elseif event == "GOSSIP_OPTIONS_REFRESHED" then
         ScheduleQuestSelectionPump()
     elseif event == "QUEST_GREETING" then
-        local guid = UnitGUID and UnitGUID("npc") or nil
+        local guid = ReadNPCGUID()
         if not questInteractionOpen then ResetQuestInteraction(guid) end
         questInteractionOpen = true
         RefreshQuestInteractionIdentity()
         ScheduleQuestSelectionPump()
     elseif event == "QUEST_DETAIL" then
         ConfirmPendingQuest("available")
-        if CurrentQuestIsRepeatable() then return end
+        if CurrentQuestNeedsManual() then return end
         DeferQuestAction(function(latest)
-            if latest.autoQuestAccept and AcceptQuest then AcceptQuest() end
+            if not latest.autoQuestAccept or not AcceptQuest then return end
+            local autoAccepted = false
+            if ns.API.QuestGetAutoAccept then
+                local ok, value = pcall(ns.API.QuestGetAutoAccept)
+                autoAccepted = ok and IsReadableTrue(value)
+            end
+            if autoAccepted then
+                if CloseQuest then CloseQuest() end
+            else
+                AcceptQuest()
+            end
         end)
     elseif event == "QUEST_PROGRESS" then
         ConfirmPendingQuest("active")
-        if CurrentQuestIsRepeatable() then return end
+        if CurrentQuestNeedsManual() or CurrentQuestHasProtectedCost() then return end
         DeferQuestAction(function(latest)
             if latest.autoQuestTurnIn and IsQuestCompletable and IsQuestCompletable()
                 and CompleteQuest then
@@ -542,7 +661,7 @@ local function OnQuestAutomation(_, event, arg1)
             end
         end)
     elseif event == "QUEST_COMPLETE" and p.autoQuestTurnIn and GetNumQuestChoices and GetQuestReward then
-        if CurrentQuestIsRepeatable() then return end
+        if CurrentQuestNeedsManual() or CurrentQuestHasProtectedCost() then return end
         DeferQuestAction(function(latest)
             if not latest.autoQuestTurnIn or not GetNumQuestChoices or not GetQuestReward then return end
             local choices = GetNumQuestChoices() or 0
@@ -551,19 +670,24 @@ local function OnQuestAutomation(_, event, arg1)
             if choices <= 1 then GetQuestReward(choices == 1 and 1 or 0) end
         end)
     elseif event == "QUEST_ACCEPTED" then
-        if arg1 then questProcessedAvailable[arg1] = true end
-        if questPendingKind == "available" and (not arg1 or arg1 == questPendingID) then
+        local questID, readable = ReadQuestIDValue(arg1)
+        if readable and questID then questProcessedAvailable[questID] = true end
+        if questPendingKind == "available" and readable
+            and (not questID or questID == questPendingID) then
             ConfirmPendingQuest("available")
         end
         ScheduleQuestSelectionPump()
     elseif event == "QUEST_TURNED_IN" then
-        if arg1 then questProcessedActive[arg1] = true end
-        if questPendingKind == "active" and (not arg1 or arg1 == questPendingID) then
+        local questID, readable = ReadQuestIDValue(arg1)
+        if readable and questID then questProcessedActive[questID] = true end
+        if questPendingKind == "active" and readable
+            and (not questID or questID == questPendingID) then
             ConfirmPendingQuest("active")
         end
         ScheduleQuestSelectionPump()
     elseif event == "QUEST_REMOVED" then
-        if arg1 and arg1 == questPendingID then
+        local questID, readable = ReadQuestIDValue(arg1)
+        if readable and questID and questID == questPendingID then
             questPendingKind = nil
             questPendingID = nil
             questPendingSerial = questPendingSerial + 1
@@ -580,7 +704,7 @@ local function QuestProbeValue(fn, ...)
 end
 
 function M:QuestProbe()
-    local guid = UnitGUID and UnitGUID("npc") or nil
+    local guid = ReadNPCGUID()
     local active = C_GossipInfo and C_GossipInfo.GetActiveQuests
         and C_GossipInfo.GetActiveQuests() or {}
     local available = C_GossipInfo and C_GossipInfo.GetAvailableQuests
