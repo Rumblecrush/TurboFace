@@ -1,5 +1,11 @@
 # TurboFace Classic Changelog
 
+## 0.19.1 — nameplate spacing and starter ranks
+
+- Class Training now resolves the exact spell ID in each live spellbook slot against the class
+  catalog. Spell families whose first trainer row is Rank 2 correctly retain that row when the
+  character owns only the built-in Rank 1, while learned higher ranks still collapse older rows.
+
 ## 0.19.0 — safer automation, trainer ranks, and combo points
 
 - Reworked target-nameplate combo points into Blizzard-inspired layered pips: every slot now has a

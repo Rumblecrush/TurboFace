@@ -884,6 +884,18 @@ API.GetSpellBookItemName = pick(GetSpellBookItemName, C_SpellBook and C_SpellBoo
     return C_SpellBook.GetSpellBookItemName(index, bank)
 end)
 
+API.GetSpellBookItemSpellID = pick(GetSpellBookItemInfo and function(index, bookType)
+    local itemType, spellID = GetSpellBookItemInfo(index, bookType)
+    if itemType == "SPELL" or itemType == "FUTURESPELL" then return spellID end
+end, C_SpellBook and C_SpellBook.GetSpellBookItemInfo and function(index, bookType)
+    local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+    local ok, info = pcall(C_SpellBook.GetSpellBookItemInfo, index, bank)
+    if not ok or type(info) ~= "table" or not API.CanAccessValue(info) then return nil end
+    local spellID = info.spellID or info.actionID
+    if not API.CanAccessValue(spellID) then return nil end
+    return spellID
+end)
+
 -- =============================================================================
 -- SKILL LINES  (Forever moved the legacy globals to C_SkillInfo)
 -- =============================================================================

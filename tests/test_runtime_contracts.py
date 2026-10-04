@@ -330,17 +330,22 @@ assert(result.profession[1].rank == 42 and result.profession[1].maxRank == 75)
 function wipe(t) for key in pairs(t) do t[key] = nil end end
 BOOKTYPE_SPELL = "spell"
 
-local spellbook = { { "Rend", "Rank 2" }, { "Battle Shout", "" } }
+local spellbook = {
+    { "Rend", "Rank 2", 6546 },
+    { "Battle Shout", "", 6673 },
+}
 local ns = {
     Trainer = {},
     API = {
         GetSpellInfo = function(id)
             if id == 772 or id == 6546 or id == 6547 then return "Rend" end
             if id == 6673 then return "Battle Shout" end
+            if id == 1752 or id == 1757 or id == 1758 then return "Sinister Strike" end
         end,
         GetNumSpellTabs = function() return 1 end,
         GetSpellTabInfo = function() return "Warrior", nil, 0, #spellbook end,
         GetSpellBookItemName = function(index) return unpack(spellbook[index]) end,
+        GetSpellBookItemSpellID = function(index) return spellbook[index][3] end,
         -- Forever can report the entire learned rank family as known. Exact-ID
         -- truth must not override the spellbook's Rank 2 ceiling for Rank 3.
         IsKnownSpellID = function(spellID) return spellID == 6546 or spellID == 6547 end,
@@ -372,6 +377,25 @@ assert(trainer:IsClassSpellKnown(6546, "Rend", 2, true))
 assert(not trainer:IsClassSpellKnown(6547, "Rend", 3, true))
 assert(trainer:IsClassSpellKnown(6673, "Battle Shout", 1, false))
 
+-- Forever can expose misleading family rank text for a built-in starter
+-- ability. The exact spellbook ID is Rank 1 because the trainer catalog starts
+-- at Rank 2; Sinister Strike Rank 2 must remain visible while Rank 3 does too.
+spellbook = { { "Sinister Strike", "Rank 2", 1752 } }
+trainer:PrimeClassSpellRankCatalog({
+    [6] = { [1757] = { rank = 2 } },
+    [14] = { [1758] = { rank = 3 } },
+})
+assert(trainer:IsClassSpellKnown(1752, "Sinister Strike", 1, true))
+assert(not trainer:IsClassSpellKnown(1757, "Sinister Strike", 2, true))
+assert(not trainer:IsClassSpellKnown(1758, "Sinister Strike", 3, true))
+
+-- Once the exact Rank 2 ID occupies the slot, catalog identity wins even if
+-- the subtext has not loaded yet.
+spellbook = { { "Sinister Strike", "", 1757 } }
+trainer:InvalidateKnownSpellbookRanks()
+assert(trainer:IsClassSpellKnown(1757, "Sinister Strike", 2, true))
+assert(not trainer:IsClassSpellKnown(1758, "Sinister Strike", 3, true))
+
 trainer:ScrubProfessionRecipesFromClassData()
 trainer:ScrubClassTrainerTransientStatus()
 assert(TurboFaceTrainerDB.data.WARRIOR[0][4094] == nil)
@@ -379,12 +403,12 @@ assert(TurboFaceTrainerDB.data.WARRIOR[4][772] ~= nil)
 assert(TurboFaceTrainerDB.data.WARRIOR[4][772].status == nil)
 assert(TurboFaceTrainerDB.professionCaptureIsolationV1 == true)
 
-spellbook = { { "Rend", "Rank 1" } }
+spellbook = { { "Rend", "Rank 1", 772 } }
 trainer:InvalidateKnownSpellbookRanks()
 assert(trainer:IsClassSpellKnown(772, "Rend", 1, true))
 assert(not trainer:IsClassSpellKnown(6546, "Rend", 2, true))
 
-spellbook = { { "Rend", "Rank 3" } }
+spellbook = { { "Rend", "Rank 3", 6547 } }
 trainer:InvalidateKnownSpellbookRanks()
 assert(trainer:IsClassSpellKnown(6547, "Rend", 3, true))
 '''
@@ -1287,9 +1311,17 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
 
     def test_forever_centered_nameplate_auras_use_whole_plate_anchor(self) -> None:
         source = (ROOT / "src" / "forever" / "Nameplates" / "ForeverAuras.lua").read_text()
-        self.assertIn("local centerAnchor = st and (st.overlay or st.root) or hp", source)
-        self.assertIn('SetPoint("BOTTOM", centerAnchor, "CENTER", x, y)', source)
-        self.assertIn('SetPoint(point, hp, relativePoint, x, y)', source)
+        self.assertIn("local function ComboReservation(st)", source)
+        self.assertIn("return math.max(0, COMBO_ROW_HEIGHT + y)", source)
+        self.assertIn("local function PositionAnchorGuide(controller, st, hp)", source)
+        self.assertIn('guide = CreateFrame("Frame", nil, st.overlay or UIParent)', source)
+        self.assertIn('guide:SetPoint("CENTER", centerAnchor, "CENTER", x, y)', source)
+        self.assertIn('guide:SetPoint(point, hp, relativePoint, x, y)', source)
+        self.assertIn('controller.frame:SetPoint("BOTTOM", guide, "CENTER", 0, 0)', source)
+        self.assertIn('controller.frame:SetPoint(point, guide, point, 0, 0)', source)
+        self.assertIn("PositionAnchorGuide(controller, st, hp)", source)
+        self.assertIn("if controller.anchorGuide then controller.anchorGuide:Hide() end", source)
+        self.assertNotIn('controller.frame:SetPoint("BOTTOM", centerAnchor', source)
 
     def test_forever_minimap_can_reach_the_screen_edge_in_edit_mode(self) -> None:
         defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()

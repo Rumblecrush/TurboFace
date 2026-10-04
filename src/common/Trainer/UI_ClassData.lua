@@ -43,6 +43,9 @@ Trainer:AddBuilder(function()
     function Trainer:BuildEntriesFromData(dataTable)
         local allEntries = {}
         local knownMaxRank = {}
+        if Trainer.PrimeClassSpellRankCatalog then
+            Trainer:PrimeClassSpellRankCatalog(dataTable)
+        end
         local playerFaction = Trainer:GetPlayerFaction()
         local playerRace = Trainer:GetPlayerRace()
         for lvl, spells in pairs(dataTable) do

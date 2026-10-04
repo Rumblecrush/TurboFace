@@ -4,6 +4,7 @@ local GetSpellInfo = ns.API.GetSpellInfo
 local GetNumSpellTabs = ns.API.GetNumSpellTabs
 local GetSpellTabInfo = ns.API.GetSpellTabInfo
 local GetSpellBookItemName = ns.API.GetSpellBookItemName
+local GetSpellBookItemSpellID = ns.API.GetSpellBookItemSpellID
 
 -- Exact spell IDs are not a complete learned-state authority on clients that
 -- replace an older rank in the spellbook. Keep a compact name -> highest-rank
@@ -11,10 +12,41 @@ local GetSpellBookItemName = ns.API.GetSpellBookItemName
 -- Class Training list and its auto-training queue.
 local knownSpellbookRanks = {}
 local knownSpellbookRanksDirty = true
+local classRankBySpellID = {}
+local firstTrainerRankByName = {}
+local classRankCatalogSource
 
 function Trainer:InvalidateKnownSpellbookRanks()
     knownSpellbookRanksDirty = true
     wipe(knownSpellbookRanks)
+end
+
+-- Starter abilities do not have a Rank 1 row in the trainer catalog: the
+-- character already owns that rank before ever visiting a trainer. Forever's
+-- retail-derived spellbook can report family/rank metadata that makes this
+-- built-in rank look like Rank 2. Build an exact spell-ID rank index from the
+-- active class catalog so the spellbook slot itself remains authoritative.
+function Trainer:PrimeClassSpellRankCatalog(dataTable)
+    if classRankCatalogSource == dataTable then return end
+    classRankCatalogSource = dataTable
+    wipe(classRankBySpellID)
+    wipe(firstTrainerRankByName)
+
+    for _, spells in pairs(dataTable or {}) do
+        for spellID, data in pairs(spells) do
+            local rank = type(data) == "table" and tonumber(data.rank) or nil
+            spellID = tonumber(spellID)
+            if spellID and rank then
+                classRankBySpellID[spellID] = rank
+                local name = GetSpellInfo and GetSpellInfo(spellID) or nil
+                if type(name) == "string" and name ~= "" then
+                    firstTrainerRankByName[name] = math.min(firstTrainerRankByName[name] or rank, rank)
+                end
+            end
+        end
+    end
+
+    self:InvalidateKnownSpellbookRanks()
 end
 
 function Trainer:GetKnownSpellbookRanks()
@@ -29,7 +61,19 @@ function Trainer:GetKnownSpellbookRanks()
             for index = offset + 1, offset + count do
                 local name, subText = GetSpellBookItemName(index, BOOKTYPE_SPELL or "spell")
                 if type(name) == "string" and name ~= "" then
-                    local rank = type(subText) == "string" and tonumber(subText:match("%d+")) or nil
+                    local spellID = GetSpellBookItemSpellID
+                        and tonumber(GetSpellBookItemSpellID(index, BOOKTYPE_SPELL or "spell")) or nil
+                    local rank = spellID and classRankBySpellID[spellID] or nil
+                    if not rank then
+                        rank = type(subText) == "string" and tonumber(subText:match("%d+")) or nil
+                    end
+                    -- If the trainer's first row is Rank 2 and the exact spell
+                    -- in the book is not a catalog row, it is the built-in
+                    -- Rank 1. Prefer that identity over misleading family text.
+                    if spellID and not classRankBySpellID[spellID]
+                        and firstTrainerRankByName[name] == 2 then
+                        rank = 1
+                    end
                     rank = rank or 1
                     knownSpellbookRanks[name] = math.max(knownSpellbookRanks[name] or 0, rank)
                 end
