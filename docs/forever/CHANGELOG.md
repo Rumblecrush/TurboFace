@@ -1,5 +1,38 @@
 # TurboFace Forever Changelog
 
+## 0.19.0 — safer automation, trainer ranks, and combo points
+
+- Reworked the detached target-nameplate combo points into Blizzard-inspired layered pips: every
+  slot now has a gold-toned 11px circular rim and opaque 9px black empty well, while earned points
+  add a 7px red center with an upper-right specular highlight for the native rounded-gem appearance.
+  The Forever path retains addon-owned overlay geometry and does not touch the protected native
+  nameplate regions or rely on undocumented client atlases.
+- Added a live Combo Point Y Offset slider from `-50` to `3`. The existing above-name position is
+  retained as the default and maximum, while players can move the detached row down beneath the
+  native nameplate without reanchoring a protected Blizzard region.
+- Fixed Class Training hiding unlearned higher ranks such as Warrior Battle Shout, Rend, and
+  Heroic Strike Rank 2. Forever's family-level known-spell predicate can report every numeric ID in
+  a learned rank chain as known; ranked entries now use the live spellbook's displayed rank as the
+  authority instead of allowing that predicate to move future ranks into Already Known. Cards keep
+  the explicit `(Rank N)` suffix, falling back to catalog rank metadata while an unlearned spell's
+  localized `C_Spell` subtext is still unavailable. Rank labels now sit one pixel left and two
+  pixels higher beside the spell name.
+- Auto Quest Accept and Turn-in now leave all repeatable quests manual. TurboFace uses the
+  native repeatable flag/quest-ID predicate on modern gossip, legacy gossip, and Quest Greeting
+  surfaces, so consumable hand-ins such as the Barrens Blood Shards cannot cascade through an
+  entire stack.
+- Quest automation also yields when an NPC offers a vendor service, preserving immediate access to
+  selling when the NPC happens to offer a quest as well — including when the player needs a free
+  bag slot before accepting it.
+- Daily and weekly quests now share the repeatable-quest manual boundary for both acceptance and
+  turn-in. Frequency is checked on gossip/Quest Greeting rows and checked again on the live quest
+  panel so incomplete or stale list metadata cannot opt a recurring quest into automation.
+- One-time quest turn-ins that spend gold or currency remain manual. Blizzard-auto-accepted quests
+  are no longer redundantly accepted, and remote `QUEST_AUTOCOMPLETE` remains outside TurboFace's
+  registered automation events.
+- NPC interaction identity now discards inaccessible Forever GUIDs before storing or comparing
+  them, preventing the serialized quest pump from treating a secret string as ordinary Lua data.
+
 ## 0.18.8 — Forever compatibility and Quick Setup
 
 - Fixed the post-update nameplate `FrameMeasurement` failure at Blizzard `NamePlateUnitFrame:UpdateAnchors()`. Forever client identity was still gated by the old version/interface/project tuple; when Blizzard changed that tuple, TurboFace silently selected Classic policy and called a native anchor method that now reads restricted regions. The Forever-only compatibility overlay is now the identity boundary, so future beta version drift cannot re-enable Classic-only native-frame paths.

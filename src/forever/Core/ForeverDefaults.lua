@@ -141,6 +141,7 @@ local function BuildData()
     data.unitframes.showPlayerDPS = false
 
     data.showComboPoints = true
+    data.comboPointYOffset = 3
     local bubble = type(data.bubbleNameplates) == "table" and data.bubbleNameplates or {}
     data.bubbleNameplates = bubble
     bubble.nameTextShadow = true

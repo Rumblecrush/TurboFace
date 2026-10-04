@@ -969,6 +969,26 @@ API.IsQuestComplete = pick(IsQuestComplete, C_QuestLog and C_QuestLog.IsComplete
     return C_QuestLog.IsComplete(questID)
 end)
 
+-- Quest-giver panels expose their currently displayed quest through this
+-- global, not through the selected quest-log entry.  It is available after
+-- QUEST_DETAIL / QUEST_PROGRESS / QUEST_COMPLETE and lets shared automation
+-- keep consumable repeatable hand-ins under player control.
+API.GetCurrentQuestID = pick(GetQuestID)
+
+-- Quest automation deliberately owns only ordinary one-time quests. Keep the
+-- current quest-panel classification and purchase-cost queries behind Compat
+-- so secret-value normalization remains centralized on Forever.
+API.IsCurrentQuestDaily = pick(QuestIsDaily)
+API.IsCurrentQuestWeekly = pick(QuestIsWeekly)
+API.QuestGetAutoAccept = pick(QuestGetAutoAccept)
+API.GetQuestMoneyRequired = pick(GetQuestMoneyToGet)
+API.GetNumQuestRequiredCurrencies = pick(GetNumQuestCurrencies)
+
+-- Gossip records normally carry this flag directly, but active legacy rows do
+-- not.  Keep the canonical quest-ID predicate at the compatibility boundary
+-- so automation can apply the same repeatable safety rule to every surface.
+API.IsRepeatableQuest = pick(C_QuestLog and C_QuestLog.IsRepeatableQuest)
+
 -- Forever is a modern-first hybrid and can expose a legacy-named global beside
 -- C_QuestLog. These are not assumed equivalent: the current quest-ID API is
 -- authoritative when present, with the old global retained for Classic.

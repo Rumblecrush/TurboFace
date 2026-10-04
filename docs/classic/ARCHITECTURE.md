@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-10-02
-**Current addon version:** 0.18.8
+**Last updated:** 2026-10-03
+**Current addon version:** 0.19.0
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -1918,6 +1918,14 @@ renderer runs at about 30 Hz only while active frames exist. An engaged hostile 
 may present the ready state, but combat entry must not fabricate a cooldown.
 
 Top-level `showComboPoints` owns the small target-nameplate combo dots for classes that use them.
+Each visible slot is an addon-owned layered pip: a warm metallic circular rim, an opaque black well
+that remains visible when empty, and a smaller red center shown only for an earned point. A tiny
+upper-right specular highlight gives the active center the rounded native-gem appearance. This avoids
+relying on undocumented Blizzard atlases while matching the native combo-point silhouette.
+`comboPointYOffset` ranges from `-50` through `3`; `3` preserves the default above-name anchor and
+is intentionally the top end of the slider, while negative values permit below-name/health placement.
+Aura-row reservation shrinks with the visible portion above the name and reaches zero once the combo
+row is fully below that anchor.
 Their cadence exists only while a valid target plate and combo-capable class require it.
 Classic Era combo capacity is a Nameplates substrate constant (`ns.NP.MAX_CP = 5`); `NameplateVisuals.lua` also retains a local fallback of 5 so a future split/load-order regression cannot crash and evict the combo cadence client.
 
@@ -3205,7 +3213,7 @@ Gate: `trainerEnabled`. TurboFace owns the Training runtime: trainer/merchant ca
 
 **Deferred static data.** Retained `Trainer/data/*.lua` files register loader closures in `Trainer.BuiltinLoaders`; no large table is constructed when Training is disabled. `BuiltinMerge.lua` merges only class, Hunter pet-trainer, and Warlock pet seed facts, then releases staging tables. LibProfessionDB's generated files independently register `ns.LibProfessionDBDataLoaders`; those closures materialize the recipe tables only on the first Recipes view and are then released. Profession/recipe SavedVariable seed merge branches no longer exist.
 
-**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Exact known-spell identity is supplemented by a cached live spellbook name/rank snapshot because some clients replace older ranks and report their numeric IDs as unknown. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
+**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Exact known-spell identity owns unranked abilities; ranked entries use a cached live spellbook name/rank snapshot because clients can either replace older numeric IDs or alias an entire rank family as known. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
 
 **Profession side views.** `Trainer/UI_Profession.lua` owns `Training` and `Recipes` next to the native profession window. Training builds an always-available baseline from trainer-only recipes in the embedded MIT-licensed LibProfessionDB 1.7.0 subset, filters proficiency-rank rows into the Skills owner, and overlays the persistent live-trainer snapshot for authoritative cost/status details. When LibProfessionDB deliberately lacks a verified Vanilla trainer learn requirement, Training keeps the row conservatively under Not Yet Available as `Skill ?`; it never substitutes the recipe's crafting-difficulty threshold. Recipes admits recipes with a confirmed vendor, quest, container, or drop path. LibProfessionDB's client-derived recipe-item index excludes profession-rank books. Because its community-derived trainer flags over-classify some externally acquired recipes, mixed trainer/external rows remain in Recipes while only trainer-without-external-source rows seed Training; observed live rows overlay the baseline by spell ID. Auto-taught, unknown-source, and never-implemented rows remain excluded. The currently open Classic TradeSkill book supplies live known state and icons. Recipes separates missing, ignored, and already-known entries, exposes only external acquisition sources in tooltips, and refreshes on `TRADE_SKILL_UPDATE`. The generated database files register deferred closures at startup and materialize when either profession view first needs them.
 
@@ -3525,6 +3533,19 @@ Modern active-quest iteration uses Blizzard's explicit active count rather than 
 table length, and reconciles each gossip entry's completion flag with `C_QuestLog.IsComplete`;
 this is required when one NPC mixes completed and in-progress quests and the gossip payload's
 completion field is missing or stale.
+
+Repeatable quests are a deliberate manual boundary on every surface: their list marker is used
+when present, with `API.IsRepeatableQuest(questID)` covering active/legacy rows that omit it.
+The current quest-giver panel is checked again before Accept, Complete, or Reward so a manually
+opened repeatable cannot fall back into automation. The controller also yields at an NPC whose
+gossip options expose a vendor service; selling remains immediately accessible when accepting a
+quest would require a bag slot.
+
+Daily and weekly quests use the same list-and-panel manual boundary, and remote
+`QUEST_AUTOCOMPLETE` is deliberately not registered. Auto Accept and Auto Turn-in remain separate
+controls for ordinary one-time quests. A one-time turn-in that requires gold or currency stays
+manual, while `QuestGetAutoAccept()` prevents a Blizzard-auto-accepted quest from receiving a
+redundant accept action.
 
 NPC interaction events are observation boundaries, not action callbacks. Gossip selection is
 delayed until Blizzard has populated the interaction, while quest selection, acceptance,

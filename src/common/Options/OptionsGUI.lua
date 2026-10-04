@@ -2499,6 +2499,8 @@ local function BuildNameplatesTab(c)
         Checkbox(c, y, GRID_COL3_X, "Name Text Shadow", "bubbleNameplates.nameTextShadow")
     end
     y = y - 28
+    y = Slider(c, y, 0, W, "Combo Point Y Offset (+Up / -Down)", "comboPointYOffset", -50, 3, 1, false)
+    y = y - 4
     Checkbox(c, y, 0, "Friendly NPC: Name + Title", "bubbleNameplates.friendlyNPCNameTitleOnly")
     Checkbox(c, y, GRID_COL2_X, "Friendly Player: Damaged Only", "bubbleNameplates.friendlyPlayerDamagedOnly")
     Checkbox(c, y, GRID_COL3_X, "Friendly NPC: Damaged Only", "bubbleNameplates.friendlyNPCDamagedOnly")
@@ -3848,7 +3850,7 @@ local function BuildPlusTab(c)
     y = CheckboxRow(c, y,
         "Auto Quest Accept", P.."autoQuestAccept",
         "Auto Quest Turn-in", P.."autoQuestTurnIn")
-    CheckboxRowNote(c, questAutomationRowY, "Shift to bypass")
+    CheckboxRowNote(c, questAutomationRowY, "Normal one-time quests only; Shift to bypass")
     y = Checkbox(c, y, 0, "Automate single-option gossip (quests excluded)", P.."automateGossip")
     y = Checkbox(c, y, 0, "Accept summons (10s grace, not in combat)", P.."acceptSummon")
     y = Checkbox(c, y, 0, "Auto-resurrect at spirit healers (shift cancels)", P.."automateSpiritHealer")

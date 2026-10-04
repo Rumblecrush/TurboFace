@@ -248,6 +248,9 @@ ns.defaults = {
     -- stay under Blizzard/user control.
     -- Nameplate combo dots. Blizzard owns the target-frame combo display.
     showComboPoints = true,
+    -- Current above-name placement is the top of the UI range. Negative values
+    -- move the addon-owned combo row down toward/below the health chassis.
+    comboPointYOffset = 3,
 
     bubbleNameplates = {
         -- Blizzard 1.15.9 owns rarity-icon visibility, classification, atlas,

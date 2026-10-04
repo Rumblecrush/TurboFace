@@ -11,6 +11,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeContractTests(unittest.TestCase):
+    def test_nameplate_combo_points_use_layered_blizzard_style_pips(self) -> None:
+        classic = (ROOT / "src" / "common" / "Nameplates" / "NameplateVisuals.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Nameplates" / "ForeverNativeAdapter.lua").read_text()
+        defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()
+        cache = (ROOT / "src" / "common" / "Nameplates" / "Nameplates.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+
+        for source in (classic, forever):
+            self.assertIn('CreateTexture(nil, "BACKGROUND")', source)
+            self.assertIn('CreateTexture(nil, "ARTWORK")', source)
+            self.assertIn('CreateTexture(nil, "OVERLAY")', source)
+            self.assertIn('.background:SetPoint("CENTER")', source)
+            self.assertIn('.fill:SetPoint("CENTER")', source)
+            self.assertIn('.fill:SetShown(filled)', source)
+            self.assertIn('.highlight:SetSize(3, 3)', source)
+            self.assertIn('.highlight:SetPoint("CENTER", d.fill, "CENTER", 1.5, 1.5)', source)
+            self.assertIn('.highlight:SetShown(filled)', source)
+
+        self.assertIn("local TF_CP_SIZE       = 11", classic)
+        self.assertIn("local TF_CP_INNER_SIZE = 9", classic)
+        self.assertIn("local TF_CP_FILL_SIZE  = 7", classic)
+        self.assertIn("local COMBO_SIZE = 11", forever)
+        self.assertIn("local COMBO_INNER_SIZE = 9", forever)
+        self.assertIn("local COMBO_FILL_SIZE = 7", forever)
+        self.assertIn("comboPointYOffset = 3", defaults)
+        self.assertIn("ns.c_comboPointYOffset = comboPointYOffset", cache)
+        self.assertIn('"comboPointYOffset", -50, 3, 1, false', options)
+        self.assertIn('(ns.c_comboPointYOffset or 3)', classic)
+        self.assertIn('ns.c_comboPointYOffset or 3)', forever)
+
     def test_forever_package_identity_survives_client_version_drift(self) -> None:
         compatibility = (ROOT / "src" / "forever" / "Core" / "Compatibility.lua").read_text()
         client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
@@ -311,7 +341,9 @@ local ns = {
         GetNumSpellTabs = function() return 1 end,
         GetSpellTabInfo = function() return "Warrior", nil, 0, #spellbook end,
         GetSpellBookItemName = function(index) return unpack(spellbook[index]) end,
-        IsKnownSpellID = function() return false end,
+        -- Forever can report the entire learned rank family as known. Exact-ID
+        -- truth must not override the spellbook's Rank 2 ceiling for Rank 3.
+        IsKnownSpellID = function(spellID) return spellID == 6546 or spellID == 6547 end,
     },
 }
 function ns:EnsureProfessionRecipeDatabase()
@@ -346,6 +378,11 @@ assert(TurboFaceTrainerDB.data.WARRIOR[0][4094] == nil)
 assert(TurboFaceTrainerDB.data.WARRIOR[4][772] ~= nil)
 assert(TurboFaceTrainerDB.data.WARRIOR[4][772].status == nil)
 assert(TurboFaceTrainerDB.professionCaptureIsolationV1 == true)
+
+spellbook = { { "Rend", "Rank 1" } }
+trainer:InvalidateKnownSpellbookRanks()
+assert(trainer:IsClassSpellKnown(772, "Rend", 1, true))
+assert(not trainer:IsClassSpellKnown(6546, "Rend", 2, true))
 
 spellbook = { { "Rend", "Rank 3" } }
 trainer:InvalidateKnownSpellbookRanks()
@@ -489,6 +526,228 @@ assert(rewarded == 1)
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_quest_automation_keeps_repeatables_and_vendor_npcs_manual(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit, "LuaJIT is required for the quest automation contract")
+        harness = r'''
+local settings = {
+    automateGossip = false,
+    autoQuestAccept = true,
+    autoQuestTurnIn = true,
+    automateSpiritHealer = false,
+}
+local currentQuestID = 9001
+local currentDaily = false
+local currentWeekly = false
+local moneyRequired = 0
+local currenciesRequired = 0
+local autoAccepted = false
+local ns = {
+    PlusSettings = function() return settings end,
+    API = {
+        QuestReadyForTurnIn = function() return false end,
+        IsRepeatableQuest = function(questID) return questID == 9001 end,
+        GetCurrentQuestID = function() return currentQuestID end,
+        IsCurrentQuestDaily = function() return currentDaily end,
+        IsCurrentQuestWeekly = function() return currentWeekly end,
+        GetQuestMoneyRequired = function() return moneyRequired end,
+        GetNumQuestRequiredCurrencies = function() return currenciesRequired end,
+        QuestGetAutoAccept = function() return autoAccepted end,
+        CanAccessValue = function(value) return value ~= "SECRET" end,
+    },
+    Chat = function() end,
+}
+
+local frames = {}
+function CreateFrame()
+    local frame = { events = {} }
+    function frame:SetScript(kind, callback) self[kind] = callback end
+    function frame:UnregisterAllEvents() self.events = {} end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    frames[#frames + 1] = frame
+    return frame
+end
+function ns.API.RegisterEvent(frame, event) frame:RegisterEvent(event) return true end
+
+local timers = {}
+C_Timer = {
+    After = function(delay, callback)
+        timers[#timers + 1] = { delay = delay, callback = callback }
+    end,
+}
+local function RunDelay(delay)
+    for index, timer in ipairs(timers) do
+        if timer.delay == delay then
+            table.remove(timers, index)
+            timer.callback()
+            return true
+        end
+    end
+    return false
+end
+local function CountDelay(delay)
+    local count = 0
+    for _, timer in ipairs(timers) do
+        if timer.delay == delay then count = count + 1 end
+    end
+    return count
+end
+
+function IsShiftKeyDown() return false end
+function UnitIsGhost() return false end
+function UnitGUID(unit) if unit == "npc" then return "Creature-test" end end
+Enum = { QuestFrequency = { Default = 0, Daily = 1, Weekly = 2 } }
+
+local vendorVisible = true
+local available = {{ questID = 42, title = "Ordinary quest" }}
+local active = {}
+local selected = 0
+C_GossipInfo = {
+    GetNumAvailableQuests = function() return #available end,
+    GetNumActiveQuests = function() return #active end,
+    GetAvailableQuests = function() return available end,
+    GetActiveQuests = function() return active end,
+    GetOptions = function()
+        return vendorVisible and {{ icon = 132060 }} or {}
+    end,
+    SelectAvailableQuest = function() selected = selected + 1 end,
+    SelectActiveQuest = function() selected = selected + 1 end,
+}
+
+local accepted, completed, rewarded, closed = 0, 0, 0, 0
+function AcceptQuest() accepted = accepted + 1 end
+function CloseQuest() closed = closed + 1 end
+function IsQuestCompletable() return true end
+function CompleteQuest() completed = completed + 1 end
+function GetNumQuestChoices() return 0 end
+function GetQuestReward() rewarded = rewarded + 1 end
+
+assert(loadfile("src/common/Plus/Automation.lua"))("TurboFace", ns)
+ns.PlusAutomation:Init()
+
+local questFrame
+for _, frame in ipairs(frames) do
+    if frame.events.GOSSIP_SHOW and frame.events.QUEST_DETAIL then questFrame = frame end
+end
+assert(questFrame, "quest automation event frame was not registered")
+
+-- A vendor-capable NPC must be left at its service menu even when it also
+-- exposes a normal quest that the automation could otherwise select.
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "vendor gossip selected a quest before the player could sell")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+
+-- The direct gossip flag handles available repeatables. The quest-ID adapter
+-- catches active repeatables whose legacy-shaped row has no repeatable field.
+vendorVisible = false
+available = {{ questID = 9001, title = "Blood Shards", repeatable = true }}
+active = {}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "repeatable quest was auto-accepted")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+
+available = {}
+active = {{ questID = 9001, title = "Blood Shards", isComplete = true }}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "repeatable quest was auto-selected for turn-in")
+
+-- Even a player-opened repeatable detail/progress/reward panel remains manual.
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0)
+assert(accepted == 0 and completed == 0 and rewarded == 0,
+    "repeatable quest panel received an automated action")
+
+-- Daily and weekly rows stay at the gossip list, and their open panels are a
+-- second safety boundary when client payloads omit frequency metadata.
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+currentQuestID = 42
+available = {{ questID = 42, title = "Daily", frequency = 1 }}
+active = {}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "daily quest was auto-selected")
+questFrame.OnEvent(questFrame, "GOSSIP_CLOSED")
+
+available = {{ questID = 43, title = "Weekly", frequency = 2 }}
+questFrame.OnEvent(questFrame, "GOSSIP_SHOW")
+assert(RunDelay(0.10))
+assert(selected == 0, "weekly quest was auto-selected")
+
+currentDaily = true
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0, "daily quest panel received an automated action")
+currentDaily = false
+currentWeekly = true
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0, "weekly quest panel received an automated action")
+
+-- One-time quests that spend gold or currency remain manual even though they
+-- are not repeatable. Ordinary cost-free quests still use both independent
+-- accept and turn-in paths.
+currentWeekly = false
+moneyRequired = 1
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0, "gold-cost quest received an automated action")
+moneyRequired = 0
+currenciesRequired = 1
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(CountDelay(0) == 0, "currency-cost quest received an automated action")
+
+currenciesRequired = 0
+autoAccepted = true
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+assert(RunDelay(0))
+assert(accepted == 0, "Blizzard auto-accepted quest was accepted twice")
+assert(closed == 1, "Blizzard auto-accepted quest panel was left open")
+autoAccepted = false
+questFrame.OnEvent(questFrame, "QUEST_DETAIL")
+assert(RunDelay(0))
+questFrame.OnEvent(questFrame, "QUEST_PROGRESS")
+assert(RunDelay(0))
+questFrame.OnEvent(questFrame, "QUEST_COMPLETE")
+assert(RunDelay(0))
+assert(accepted == 1 and completed == 1 and rewarded == 1,
+    "ordinary one-time quest did not use the split accept and turn-in actions")
+'''
+        result = subprocess.run(
+            [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        source = (ROOT / "src" / "common" / "Plus" / "Automation.lua").read_text()
+        self.assertIn("local function ReadNPCGUID()", source)
+        self.assertNotIn('UnitGUID and UnitGUID("npc") or nil', source)
+        self.assertNotIn('"QUEST_AUTOCOMPLETE"', source)
+
+        for flavor in ("classic", "forever"):
+            compat = (ROOT / "src" / flavor / "Core" / "Compat.lua").read_text()
+            self.assertIn("API.IsCurrentQuestDaily = pick(QuestIsDaily)", compat)
+            self.assertIn("API.IsCurrentQuestWeekly = pick(QuestIsWeekly)", compat)
+            self.assertIn("API.QuestGetAutoAccept = pick(QuestGetAutoAccept)", compat)
+            self.assertIn("API.GetQuestMoneyRequired = pick(GetQuestMoneyToGet)", compat)
+            self.assertIn("API.GetNumQuestRequiredCurrencies = pick(GetNumQuestCurrencies)", compat)
+
+    def test_trainer_rank_labels_fall_back_to_catalog_metadata(self) -> None:
+        source = (ROOT / "src" / "common" / "Trainer" / "UI_Core.lua").read_text()
+
+        self.assertIn("local function GetEntryRankText(entry)", source)
+        self.assertIn('local pattern = type(_G.RANK) == "string" and _G.RANK or "Rank %d"', source)
+        self.assertIn('return "Rank " .. rankNum', source)
+        self.assertEqual(source.count("local rankSubtext = GetEntryRankText(entry)"), 2)
+        self.assertIn('rankFS:SetPoint("BOTTOMLEFT", nameFS, "BOTTOMRIGHT", 4, 1)', source)
+        self.assertIn('rankFS:SetPoint("LEFT", nameFS, "RIGHT", -1, 2)', source)
 
     def test_loot_frame_accepts_either_documented_player_field(self) -> None:
         source = (ROOT / "src" / "common" / "LootFrame.lua").read_text()
