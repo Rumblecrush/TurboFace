@@ -101,9 +101,10 @@ end
 
 -- =============================================================================
 -- TARGET NAMEPLATE COMBO POINTS (Rogue / Druid) -- 5 layered pips between the
--- name and the debuff row on the current target's nameplate. Each slot keeps a
+-- name and the debuff row on each snapshotted target nameplate. Each slot keeps a
 -- warm metallic rim and black well; earned points add a smaller red center.
--- All 5 slots remain visible. A Nameplates-owned singleton driver runs
+-- The 5-slot row appears only while that plate owns at least one point. A
+-- Nameplates-owned singleton driver runs
 -- only while an eligible target plate exists; Unit Frames are not a dependency.
 -- =============================================================================
 local TF_CP_TEX        = "Interface\\AddOns\\TurboFace\\Textures\\Circle_White"
@@ -118,6 +119,7 @@ local TF_CP_HIGHLIGHT  = { 1.00, 0.72, 0.32, 0.90 }
 local _, TF_PLAYER_CLASS = ns.API.ReadUnitClass("player")
 local TF_COMBO_CLASS = (TF_PLAYER_CLASS == "ROGUE" or TF_PLAYER_CLASS == "DRUID")
 local TF_IS_DRUID    = (TF_PLAYER_CLASS == "DRUID")
+local comboOwnerPlate
 
 local function EnsureTargetCombo(plate)
     if plate.tfCombo then return plate.tfCombo end
@@ -162,16 +164,19 @@ local function EnsureTargetCombo(plate)
     return c
 end
 
-local function TargetComboShouldShow(plate)
+local function ComboModeAllowed()
     if ns.ModuleEnabled and not ns.ModuleEnabled("nameplates") then return false end
     if not TF_COMBO_CLASS or not ns.c_showComboPoints then return false end
-    if not plate or plate.isPlayer then return false end
-    if not UnitExists("target") then return false end
     if TF_IS_DRUID then
         -- Combo points are only usable in Cat Form.
         return GetShapeshiftFormID and GetShapeshiftFormID() == (CAT_FORM or 1)
     end
     return true
+end
+
+local function TargetComboShouldShow(plate)
+    return ComboModeAllowed() and plate and not plate.isPlayer
+        and type(plate._tfComboPoints) == "number" and plate._tfComboPoints > 0
 end
 
 -- Vertical space the combo dots occupy above the name. Nameplates/Auras.lua adds this to
@@ -194,44 +199,101 @@ local function ComboReflowDebuffs(plate)
     end
 end
 
-function ns.UpdateTargetComboPoints()
-    local plate = ns.currentTargetPlate
-
-    -- A plate that is no longer the target: hide its dots, restore its debuffs.
-    local old = ns._tfLastComboPlate
-    if old and old ~= plate and old.tfCombo and old._tfComboShown then
-        old.tfCombo:Hide()
-        old._tfComboShown = false
-        ComboReflowDebuffs(old)
+local function HideComboSnapshot(plate, clearSnapshot, skipReflow)
+    if not plate then return end
+    if clearSnapshot then plate._tfComboPoints = nil end
+    if plate.tfCombo and plate._tfComboShown then
+        plate.tfCombo:Hide()
+        plate._tfComboShown = false
+        plate._tfComboAnchorY = nil
+        if not skipReflow then ComboReflowDebuffs(plate) end
     end
-    ns._tfLastComboPlate = plate
+end
 
+function ns.ClearNameplateComboSnapshot(plate, skipReflow)
+    if comboOwnerPlate == plate then comboOwnerPlate = nil end
+    HideComboSnapshot(plate, true, skipReflow)
+end
+
+local function RenderComboSnapshot(plate)
     if not TargetComboShouldShow(plate) then
-        if plate and plate.tfCombo and plate._tfComboShown then
-            plate.tfCombo:Hide()
-            plate._tfComboShown = false
-            ComboReflowDebuffs(plate)
-        end
-        return
+        HideComboSnapshot(plate, false)
+        return false
     end
 
     local c = EnsureTargetCombo(plate)
-    if not c then return end
+    if not c then return false end
+    local anchorY = ns.c_comboPointYOffset or 3
+    local anchorChanged = plate._tfComboAnchorY ~= anchorY
     c:ClearAllPoints()
     local nameAnchor = ns.GetNameplateNameAnchor(plate, true) or plate.hp or plate
-    c:SetPoint("BOTTOM", nameAnchor, "TOP", 0, ns.c_comboPointYOffset or 3)
+    c:SetPoint("BOTTOM", nameAnchor, "TOP", 0, anchorY)
+    plate._tfComboAnchorY = anchorY
 
-    local cp = GetComboPoints("player", "target") or 0
+    local cp = plate._tfComboPoints
     for i = 1, MAX_CP do
         local filled = i <= cp
         c.dots[i].fill:SetShown(filled)
         c.dots[i].highlight:SetShown(filled)
     end
     c:Show()
-    if not plate._tfComboShown then
+    if not plate._tfComboShown or anchorChanged then
         plate._tfComboShown = true
-        ComboReflowDebuffs(plate)   -- push debuffs up to clear the new dots
+        ComboReflowDebuffs(plate)
     end
+    return true
+end
+
+local function RefreshComboSnapshots()
+    for _, plate in pairs(ns.unitToPlate or {}) do
+        if plate and plate._tfComboPoints ~= nil then RenderComboSnapshot(plate) end
+    end
+end
+
+local function ClearOtherComboPoints(ownerPlate)
+    for _, plate in pairs(ns.unitToPlate or {}) do
+        if plate and plate ~= ownerPlate and type(plate._tfComboPoints) == "number"
+            and plate._tfComboPoints > 0 then
+            plate._tfComboPoints = 0
+            RenderComboSnapshot(plate)
+        end
+    end
+end
+
+local function HideAllComboSnapshots()
+    for _, plate in pairs(ns.unitToPlate or {}) do
+        if plate then HideComboSnapshot(plate, false) end
+    end
+end
+
+function ns.UpdateTargetComboPoints()
+    if not ComboModeAllowed() then
+        HideAllComboSnapshots()
+        return
+    end
+
+    -- Only the selected target may be queried. Once read, its value belongs to
+    -- that visible plate until the plate is targeted again or leaves the world.
+    -- Deselecting/switching targets therefore mirrors nameplate debuff
+    -- persistence without attempting an unavailable non-target power query.
+    local plate = ns.currentTargetPlate
+    if not plate or plate.isPlayer or not UnitExists("target") then return end
+
+    local cp = GetComboPoints("player", "target")
+    if type(cp) == "number" then
+        cp = math.max(0, math.min(MAX_CP, math.floor(cp)))
+        if cp > 0 and comboOwnerPlate ~= plate then
+            -- Target changes alone preserve the old snapshot. The first point
+            -- earned on a different target is the authoritative ownership
+            -- handoff and empties every other visible row.
+            ClearOtherComboPoints(plate)
+            comboOwnerPlate = plate
+        elseif cp == 0 and comboOwnerPlate == plate then
+            comboOwnerPlate = nil
+        end
+        plate._tfComboPoints = cp
+    end
+    RenderComboSnapshot(plate)
 end
 
 -- Combo-point changes have no reliable dedicated event on this Classic client, so
@@ -255,12 +317,13 @@ local function ComboTick()
 end
 
 function ns.RefreshNameplateComboDriver()
+    if ComboModeAllowed() then RefreshComboSnapshots() else HideAllComboSnapshots() end
     if ComboDriverAllowed() then
         ns.Cadence:Add("TurboFaceNameplateCombo", 0.10, ComboTick, true)
         ns.UpdateTargetComboPoints()
     else
         ns.Cadence:Remove("TurboFaceNameplateCombo")
-        ns.UpdateTargetComboPoints() -- hide/reflow any previously visible dots
+        ns.UpdateTargetComboPoints()
     end
 end
 

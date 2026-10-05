@@ -1,5 +1,15 @@
 # TurboFace Forever Changelog
 
+## 0.19.2 — persistent nameplate combo snapshots
+
+- Combo points now remain visible on a target's nameplate after it is deselected or another target
+  is selected. Forever reads points only from the current target, caches that readable snapshot in
+  external per-plate state, and releases it when the nameplate leaves rather than touching protected
+  non-target data. Detached aura guides continue reserving space for every retained combo row.
+- The first positive point earned on a different target now hands combo ownership to that plate and
+  resets all older visible snapshots to zero; target changes alone do not prematurely clear them.
+  A zero-point row is hidden whether its plate is selected or retained.
+
 ## 0.19.1 — nameplate spacing and starter ranks
 
 - Fixed detached nameplate debuffs retaining their old fixed vertical anchor while the new combo

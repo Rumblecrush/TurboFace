@@ -381,8 +381,10 @@ function ns.ActivateNameplateUnitEvents()
     ns.RegisterEvent(eventFrame, "UNIT_HEALTH")
     ns.RegisterEvent(eventFrame, "UNIT_MAXHEALTH")
     ns.RegisterEvent(eventFrame, "PLAYER_TARGET_CHANGED")
-    -- Combo point events do not exist in Classic Era 1.15.8; combo points are
-    -- read via GetComboPoints() on PLAYER_TARGET_CHANGED.
+    ns.RegisterEvent(eventFrame, "UPDATE_SHAPESHIFT_FORM")
+    -- Classic exposes no reliable dedicated combo-point event. Target changes
+    -- select the plate; the demand-gated cadence reads the current value while
+    -- deselected plates retain their last snapshot without continued polling.
     ns.RegisterEvent(eventFrame, "UNIT_FACTION")
     ns.RegisterEvent(eventFrame, "QUEST_LOG_UPDATE")
     ns.RegisterEvent(eventFrame, "QUEST_ACCEPTED")
@@ -629,6 +631,8 @@ NameplateUnitOnEvent = function(self, event, unit)
         else
             UpdateTarget()
         end
+    elseif event == "UPDATE_SHAPESHIFT_FORM" then
+        if ns.RefreshNameplateComboDriver then ns.RefreshNameplateComboDriver() end
     elseif event == "UNIT_THREAT_LIST_UPDATE" or event == "UNIT_THREAT_SITUATION_UPDATE" then
         ScheduleThreatUpdate(unit)
     elseif event == "GROUP_ROSTER_UPDATE" then

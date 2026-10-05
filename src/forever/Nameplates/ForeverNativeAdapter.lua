@@ -726,9 +726,8 @@ local function EnsureCombo(st)
     return f
 end
 
-local function ComboAllowed(st)
+local function ComboModeAllowed()
     if not COMBO_CLASS or ns.c_showComboPoints == false then return false end
-    if not st or API.ReadUnitIsUnit(st.unit, "target") ~= true then return false end
     if IS_DRUID and GetShapeshiftFormID then
         local ok, form = pcall(GetShapeshiftFormID)
         if not ok or form ~= (CAT_FORM or 1) then return false end
@@ -736,19 +735,79 @@ local function ComboAllowed(st)
     return true
 end
 
-local function UpdateCombo(st, nameRegion, hp)
-    local f = EnsureCombo(st)
-    if not ComboAllowed(st) then f:Hide(); return false end
-    local cp = API.GetComboPoints and API.GetComboPoints("player", "target") or nil
-    if type(cp) ~= "number" then f:Hide(); return false end
-    f:ClearAllPoints()
-    f:SetPoint("BOTTOM", nameRegion or hp or st.root, "TOP", 0, ns.c_comboPointYOffset or 3)
+local function ComboIsCurrentTarget(st)
+    return st and API.ReadUnitIsUnit(st.unit, "target") == true
+end
+
+local function RepositionComboAuras(st, hp)
+    if FNP.Auras and FNP.Auras.Reposition then FNP.Auras:Reposition(st, hp) end
+end
+
+local function HideComboRow(st, hp)
+    local f = st and st.combo
+    if not f then return false end
+    local wasShown = f:IsShown()
+    f:Hide()
+    if wasShown then RepositionComboAuras(st, hp) end
+    return wasShown
+end
+
+local function SetComboDots(f, cp)
     for i = 1, MAX_CP do
         local filled = i <= cp
         f.dots[i].fill:SetShown(filled)
         f.dots[i].highlight:SetShown(filled)
     end
+end
+
+local function ClearOtherComboPoints(ownerState)
+    for _, st in pairs(FNP.statesByUnit) do
+        if st ~= ownerState and type(st.comboPoints) == "number" and st.comboPoints > 0 then
+            st.comboPoints = 0
+            local _, hp = NativeRegions(st.root)
+            HideComboRow(st, hp)
+        end
+    end
+end
+
+local function UpdateCombo(st, nameRegion, hp)
+    local f = EnsureCombo(st)
+    if not ComboModeAllowed() then
+        HideComboRow(st, hp)
+        return false
+    end
+
+    -- Forever exposes combo points only through the player/current-target
+    -- boundary. Snapshot a readable value onto that target's external state;
+    -- non-target plates keep their last snapshot without querying protected
+    -- unit data. The snapshot is discarded when the pooled plate is removed.
+    if ComboIsCurrentTarget(st) then
+        local cp = API.GetComboPoints and API.GetComboPoints("player", "target") or nil
+        if type(cp) == "number" then
+            cp = min(MAX_CP, max(0, floor(cp)))
+            if cp > 0 and FNP.comboOwner ~= st then
+                -- Deselecting or switching targets preserves snapshots. A
+                -- positive point on a different target is the actual ownership
+                -- handoff and clears the filled centers on every older plate.
+                ClearOtherComboPoints(st)
+                FNP.comboOwner = st
+            elseif cp == 0 and FNP.comboOwner == st then
+                FNP.comboOwner = nil
+            end
+            st.comboPoints = cp
+        end
+    end
+    local cp = st.comboPoints
+    if type(cp) ~= "number" or cp <= 0 then
+        HideComboRow(st, hp)
+        return false
+    end
+    local wasShown = f:IsShown()
+    f:ClearAllPoints()
+    f:SetPoint("BOTTOM", nameRegion or hp or st.root, "TOP", 0, ns.c_comboPointYOffset or 3)
+    SetComboDots(f, cp)
     f:Show()
+    if not wasShown then RepositionComboAuras(st, hp) end
     return true
 end
 
@@ -988,7 +1047,7 @@ function FNP:RefreshComboDriver()
     if not ns.Cadence then return end
     local targetState
     for _, st in pairs(self.statesByUnit) do
-        if ComboAllowed(st) then targetState = st break end
+        if ComboModeAllowed() and ComboIsCurrentTarget(st) then targetState = st break end
     end
     if targetState then
         ns.Cadence:Add("TurboFaceForeverNameplateCombo", 0.10, function()
@@ -1049,8 +1108,17 @@ function FNP:Bind(unit, root, reason)
         self.statesByUnit[st.unit] = nil
     end
 
+    local nextGUID = API.ReadUnitGUID(unit)
+    if st.unit and st.unit ~= unit then
+        if self.comboOwner == st then self.comboOwner = nil end
+        st.comboPoints = nil
+    end
+    if st.guid and nextGUID and st.guid ~= nextGUID then
+        if self.comboOwner == st then self.comboOwner = nil end
+        st.comboPoints = nil
+    end
     st.unit = unit
-    st.guid = API.ReadUnitGUID(unit)
+    st.guid = nextGUID
     st.lastReason = reason or "bind"
     self.statesByUnit[unit] = st
     AttachOverlay(st)
@@ -1091,8 +1159,10 @@ function FNP:Remove(unit, reason)
     end
     if ns.unitToNameplate then ns.unitToNameplate[unit] = nil end
     if ns.unitToNameplateGUID then ns.unitToNameplateGUID[unit] = nil end
+    if self.comboOwner == st then self.comboOwner = nil end
     st.unit = nil
     st.guid = nil
+    st.comboPoints = nil
     st.swingState = nil
     st.lastReason = reason or "remove"
     self.removedCount = self.removedCount + 1
@@ -1213,7 +1283,14 @@ eventFrame:SetScript("OnEvent", function(_, event, unit)
     elseif event == "UPDATE_SHAPESHIFT_FORM" or event == "UNIT_POWER_UPDATE"
         or event == "UNIT_POWER_FREQUENT" or event == "UNIT_MAXPOWER"
         or event == "UNIT_DISPLAYPOWER" then
-        if event ~= "UPDATE_SHAPESHIFT_FORM" then
+        if event == "UPDATE_SHAPESHIFT_FORM" then
+            for _, st in pairs(FNP.statesByUnit) do
+                local _, hp, _, name = NativeRegions(st.root)
+                UpdateCombo(st, name, hp)
+            end
+            FNP:RefreshComboDriver()
+            return
+        else
             local st = unit and FNP.statesByUnit[unit]
             if st then
                 RunNextFrame(function()
@@ -1226,7 +1303,7 @@ eventFrame:SetScript("OnEvent", function(_, event, unit)
             if unit ~= "player" then return end
         end
         for _, st in pairs(FNP.statesByUnit) do
-            if API.ReadUnitIsUnit(st.unit, "target") == true then
+            if ComboIsCurrentTarget(st) then
                 local _, hp, _, name = NativeRegions(st.root)
                 UpdateCombo(st, name, hp)
                 break

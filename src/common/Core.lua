@@ -1702,6 +1702,12 @@ OnNamePlateRemoved = function(_, unit, nameplate)
             if ns.CleanupPlateAuras then
                 ns:CleanupPlateAuras(nameplate.myPlate)
             end
+            -- Combo points are cached per visible plate so they survive target
+            -- changes. The cache ends with the plate lifecycle and must never
+            -- leak into a pooled frame's next unit.
+            if ns.ClearNameplateComboSnapshot then
+                ns.ClearNameplateComboSnapshot(nameplate.myPlate, true)
+            end
             -- Hide TurboDebuff
             if ns.HideTurboDebuff then
                 ns:HideTurboDebuff(nameplate.myPlate)

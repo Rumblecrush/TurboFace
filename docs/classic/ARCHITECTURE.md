@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
-**Last updated:** 2026-10-03
-**Current addon version:** 0.19.1
+**Last updated:** 2026-10-05
+**Current addon version:** 0.19.2
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -1926,6 +1926,12 @@ relying on undocumented Blizzard atlases while matching the native combo-point s
 is intentionally the top end of the slider, while negative values permit below-name/health placement.
 Aura-row reservation shrinks with the visible portion above the name and reaches zero once the combo
 row is fully below that anchor.
+Only the selected target is queried for combo points. Its last readable count is snapshotted on the
+addon-owned plate state, so the row remains visible after deselection or a target switch; retargeting
+refreshes it and `NAME_PLATE_UNIT_REMOVED` clears it before the pooled plate is reused.
+The first positive point observed on a different plate is the ownership handoff: all other retained
+rows are reset to zero and hidden. A row is visible only while its snapshot is positive, regardless
+of target selection. Merely changing targets does not trigger the ownership handoff.
 Their cadence exists only while a valid target plate and combo-capable class require it.
 Classic Era combo capacity is a Nameplates substrate constant (`ns.NP.MAX_CP = 5`); `NameplateVisuals.lua` also retains a local fallback of 5 so a future split/load-order regression cannot crash and evict the combo cadence client.
 
