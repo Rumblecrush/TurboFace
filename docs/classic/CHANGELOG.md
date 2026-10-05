@@ -1,5 +1,14 @@
 # TurboFace Classic Changelog
 
+## 0.19.2 — persistent nameplate combo snapshots
+
+- Nameplate combo points now remain on their visible target plate after deselecting it or selecting
+  another unit. Only the current target is queried; each plate retains its last readable point count
+  until targeted again or removed, and pooled-frame cleanup discards the snapshot before reuse.
+- Earning the first point on a different target transfers combo ownership and resets every other
+  visible snapshot to zero, matching the single-target combo-point rules. Zero-point rows are hidden
+  whether selected or retained; a row appears only when its plate owns at least one point.
+
 ## 0.19.1 — nameplate spacing and starter ranks
 
 - Class Training now resolves the exact spell ID in each live spellbook slot against the class

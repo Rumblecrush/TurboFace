@@ -41,6 +41,38 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertIn('(ns.c_comboPointYOffset or 3)', classic)
         self.assertIn('ns.c_comboPointYOffset or 3)', forever)
 
+    def test_nameplate_combo_snapshots_survive_target_changes(self) -> None:
+        classic = (ROOT / "src" / "common" / "Nameplates" / "NameplateVisuals.lua").read_text()
+        core = (ROOT / "src" / "common" / "Core.lua").read_text()
+        forever = (ROOT / "src" / "forever" / "Nameplates" / "ForeverNativeAdapter.lua").read_text()
+        forever_auras = (ROOT / "src" / "forever" / "Nameplates" / "ForeverAuras.lua").read_text()
+
+        self.assertIn("cp = math.max(0, math.min(MAX_CP", classic)
+        self.assertIn("plate._tfComboPoints = cp", classic)
+        self.assertIn('type(plate._tfComboPoints) == "number" and plate._tfComboPoints > 0', classic)
+        self.assertIn("local function RenderComboSnapshot(plate)", classic)
+        self.assertIn("local function ClearOtherComboPoints(ownerPlate)", classic)
+        self.assertIn("if cp > 0 and comboOwnerPlate ~= plate then", classic)
+        self.assertIn("plate._tfComboPoints = 0", classic)
+        self.assertIn("function ns.ClearNameplateComboSnapshot(plate, skipReflow)", classic)
+        self.assertIn("ns.ClearNameplateComboSnapshot(nameplate.myPlate, true)", core)
+        units = (ROOT / "src" / "common" / "Nameplates" / "NameplateUnits.lua").read_text()
+        self.assertIn('ns.RegisterEvent(eventFrame, "UPDATE_SHAPESHIFT_FORM")', units)
+        self.assertNotIn("old.tfCombo:Hide()", classic)
+
+        self.assertIn("if ComboIsCurrentTarget(st) then", forever)
+        self.assertIn("local function ClearOtherComboPoints(ownerState)", forever)
+        self.assertIn("if cp > 0 and FNP.comboOwner ~= st then", forever)
+        self.assertIn("st.comboPoints = 0", forever)
+        self.assertIn("cp = min(MAX_CP", forever)
+        self.assertIn("st.comboPoints = cp", forever)
+        self.assertIn("local cp = st.comboPoints", forever)
+        self.assertIn('if type(cp) ~= "number" or cp <= 0 then', forever)
+        self.assertIn("local function HideComboRow(st, hp)", forever)
+        self.assertIn("st.comboPoints = nil", forever)
+        self.assertIn("function FA:Reposition(st, hp)", forever_auras)
+        self.assertIn("PositionAnchorGuide(controller, st, hp)", forever_auras)
+
     def test_forever_package_identity_survives_client_version_drift(self) -> None:
         compatibility = (ROOT / "src" / "forever" / "Core" / "Compatibility.lua").read_text()
         client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()

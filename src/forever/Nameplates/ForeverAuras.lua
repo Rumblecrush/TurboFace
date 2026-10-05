@@ -520,6 +520,19 @@ function FA:Release(st)
     st.foreverAurasActive = nil
 end
 
+-- Combo snapshots can become visible or hidden on a target change without
+-- rebinding the native AuraContainer. Move only the addon-owned guides so the
+-- existing secret-bound container follows the new reservation safely.
+function FA:Reposition(st, hp)
+    if not st or not hp then return end
+    for _, kind in ipairs({"debuff", "buff"}) do
+        local controller = st[kind .. "Auras"]
+        if controller and controller.configured then
+            PositionAnchorGuide(controller, st, hp)
+        end
+    end
+end
+
 function FA:RefreshCount()
     local count = 0
     for _, st in pairs(FNP.statesByUnit) do

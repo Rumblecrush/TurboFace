@@ -4,13 +4,13 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
-**Last updated:** 2026-10-03
-**Current addon version:** 0.19.1
+**Last updated:** 2026-10-05
+**Current addon version:** 0.19.2
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.19.1
+**Source baseline:** TurboFace unified 0.19.2
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -519,6 +519,14 @@ Current safe/adapted surfaces include, subject to their own live capabilities:
 - stable-alias threat percentage and Aggro Audio when readable;
 - enemy swing presentation;
 - detached Blizzard-owned aura rows.
+
+Combo points are read only while a plate is the current target. The last readable count is retained
+in the adapter's external per-plate state, allowing the addon-owned row to remain after deselection
+or a target switch without querying protected non-target data. Retargeting refreshes the snapshot;
+nameplate removal clears it before Blizzard reuses the pooled root.
+Combo ownership transfers only when a different current target reports a positive point. At that
+moment every other retained snapshot is reset to zero and its row is hidden. A combo row is visible
+only while its plate has a positive snapshot, regardless of whether that plate remains selected.
 
 The detached aura rows anchor once to addon-owned per-controller guide frames before their
 `AuraContainer` binds secret aura state. Combo-point vertical movement updates those guides rather
