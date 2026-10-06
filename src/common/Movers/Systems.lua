@@ -875,6 +875,7 @@ M.RegisterSystemFrameMovers = function(self)
     if not M.active then return end
     if ns.ST and ns.ST.RegisterTimerMovers then ns.ST:RegisterTimerMovers(self) end
     if ns.Castbars and ns.Castbars.RegisterTimerMovers then ns.Castbars:RegisterTimerMovers(self) end
+    if self.RegisterNativeTargetCastbarMover then self:RegisterNativeTargetCastbarMover() end
     local latency = FirstExistingFrame({
         "MainMenuBarPerformanceBarFrame",
         "MainMenuBarPerformanceBar",
@@ -1200,6 +1201,9 @@ function M:HandleCommand(msg)
         self:Unlock()
     elseif cmd == "auraprobe" or (cmd == "aura" and args:lower() == "probe") then
         AuraMoverProbe()
+    elseif cmd == "targetcastprobe" or (cmd == "targetcast" and args:lower() == "probe") then
+        if self.NativeTargetCastbarProbe then self:NativeTargetCastbarProbe()
+        else Chat("native target castbar mover is unavailable on this client.") end
     elseif cmd == "hide" then
         if args ~= "" then
             local name, state = ParseElementAndState(args)
@@ -1289,7 +1293,7 @@ function M:HandleCommand(msg)
             Chat("usage: /tfmove nudge 1")
         end
     else
-        Chat("commands: /tf move, /tf lock, /tfmove auraprobe, /tf reset playerbuffs, /tfmove hide fps, /tfmove clickthrough playerbuffs, /tfmove grid, /tfmove snap 5, /tfmove nudge 1")
+        Chat("commands: /tf move, /tf lock, /tfmove auraprobe, /tfmove targetcastprobe, /tf reset playerbuffs, /tfmove hide fps, /tfmove clickthrough playerbuffs, /tfmove grid, /tfmove snap 5, /tfmove nudge 1")
     end
 end
 

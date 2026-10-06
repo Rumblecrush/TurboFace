@@ -193,9 +193,9 @@ def merged_expected(flavor: str) -> dict[str, str]:
 def main() -> None:
     classic_toc_source = (ROOT / "src" / "classic" / "TurboFace.toc").read_text(errors="replace")
     forever_toc_source = (ROOT / "src" / "forever" / "TurboFace.toc").read_text(errors="replace")
-    if "## Version: 0.19.2" not in classic_toc_source:
+    if "## Version: 0.19.3" not in classic_toc_source:
         raise SystemExit("Classic version contract changed unexpectedly")
-    if "## Version: 0.19.2" not in forever_toc_source:
+    if "## Version: 0.19.3" not in forever_toc_source:
         raise SystemExit("Forever version contract changed unexpectedly")
 
     common = set(inventory(ROOT / "src" / "common"))
@@ -714,11 +714,11 @@ def main() -> None:
     source_map = (ROOT / "docs" / "SOURCE_MAP.md").read_text(errors="replace")
     strategy = (ROOT / "docs" / "MULTICLIENT_STRATEGY.md").read_text(errors="replace")
     for marker in (
-        "**Forever:** 0.19.2 / Interface 16001",
+        "**Forever:** 0.19.3 / Interface 16001",
         "| Byte-identical same-path files | 176 |",
         "| Same-path but different contents | 5 |",
-        "| Forever-only paths | 14 |",
-        "The union is 196 relative paths.",
+        "| Forever-only paths | 15 |",
+        "The union is 197 relative paths.",
         "| Byte-identical | 107 |",
     ):
         if marker not in source_map:
@@ -746,7 +746,7 @@ def main() -> None:
     forever_package = merged_expected("forever")
     same_package_paths = set(classic_package) & set(forever_package)
     identical_package_paths = {rel for rel in same_package_paths if classic_package[rel] == forever_package[rel]}
-    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 195, 181, 176):
+    if (len(classic_package), len(forever_package), len(same_package_paths), len(identical_package_paths)) != (182, 196, 181, 176):
         raise SystemExit(
             "package inventory contract drifted: "
             f"classic={len(classic_package)} forever={len(forever_package)} "

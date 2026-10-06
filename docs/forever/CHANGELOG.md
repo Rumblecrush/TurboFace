@@ -1,5 +1,20 @@
 # TurboFace Forever Changelog
 
+## 0.19.3 — native target castbar mover
+
+- Refreshed **Rumblecrush's Preset** from the 2026-10-06 profile export. The
+  preset now selects and places the native Target Unit Cast Bar at
+  `CENTER (145, -375)`, moves Target of Target to `CENTER (350, -260)`, and
+  enables nameplate swing timers and Speedrun Splits to match the supplied profile.
+- Added a Forever-only **Target Unit Cast Bar** mover for Blizzard's native
+  `TargetFrameSpellBar`. TurboFace moves only an addon-owned proxy anchor and
+  reattaches the native bar after Blizzard target/aura/cast layout passes; it
+  does not read cast state or recreate any castbar regions.
+- Position writes defer when the native bar reports itself protected during
+  combat. Disabling the mover restores Blizzard's own target-castbar layout.
+- Added `/tfmove targetcastprobe` diagnostics for frame resolution, protection,
+  current anchor ownership, deferred state, geometry and the last write error.
+
 ## 0.19.2 — persistent nameplate combo snapshots
 
 - Combo points now remain visible on a target's nameplate after it is deselected or another target

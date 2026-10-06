@@ -4,13 +4,13 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
-**Last updated:** 2026-10-05
-**Current addon version:** 0.19.2
+**Last updated:** 2026-10-06
+**Current addon version:** 0.19.3
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.19.2
+**Source baseline:** TurboFace unified 0.19.3
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -1056,6 +1056,15 @@ Forever adds two constraints:
 Prefer moving TurboFace-owned detached frames. When a supported feature must amend Blizzard geometry, apply only through a documented adapter, defer combat-unsafe work, and reapply after known native layout changes rather than polling every frame.
 
 Do not insert TurboFace-owned elements into Blizzard's internal Edit Mode systems merely to make them draggable; shared TurboFace Movers remain the addon placement owner.
+
+The Forever **Target Unit Cast Bar** mover is position-only. Blizzard retains
+ownership of `TargetFrameSpellBar`, its events, secret cast state, textures and
+visibility. `Movers/ForeverTargetCastbar.lua` registers an addon-owned proxy
+anchor, attaches the native bar to it, and reasserts that point after Blizzard's
+own cast/aura layout pass. It does not replace scripts or query `UnitCastingInfo`.
+When the bar reports itself protected in combat, position work is deferred until
+`PLAYER_REGEN_ENABLED`; disabling the mover calls Blizzard's native layout
+function (or the captured stock point) to release TurboFace ownership.
 
 The Objective Tracker is the first mover ownership boundary expressed entirely through the client
 feature registry rather than an explicit Forever branch. `movers.questTracker` is available on

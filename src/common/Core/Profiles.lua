@@ -496,7 +496,7 @@ Profiles.Presets = {
     -- there is time to validate them.
     {
         name = "Rumblecrush's Preset",
-        desc = "2026-09-29",
+        desc = "2026-10-06",
         schemaVersion = 79,
         data = {
                 ["bagSlotsEnabled"]=true,
@@ -518,7 +518,7 @@ Profiles.Presets = {
                     ["powerBarHeightPct"]=0.29999998211860662,
                     ["powerBarOverlap"]=true,
                     ["rarityIconRight"]=false,
-                    ["swingTimer"]=false,
+                    ["swingTimer"]=true,
                     ["threatNumber"]=true,
                     ["threatTextFontSize"]=14,
                 },
@@ -642,7 +642,7 @@ Profiles.Presets = {
                     },
                 },
                 ["movers"]={
-                    ["activeElement"]="GroceryButton",
+                    ["activeElement"]="NativeTargetCastBar",
                     ["aura"]={
                         ["spacingX"]=6,
                         ["spacingY"]=6,
@@ -775,6 +775,15 @@ Profiles.Presets = {
                             ["x"]=400,
                             ["y"]=-525,
                         },
+                        ["NativeTargetCastBar"]={
+                            ["clickThrough"]=false,
+                            ["enabled"]=true,
+                            ["hidden"]=false,
+                            ["point"]="CENTER",
+                            ["relativePoint"]="CENTER",
+                            ["x"]=145,
+                            ["y"]=-375,
+                        },
                         ["PlayerCastBar"]={
                             ["x"]=0,
                             ["y"]=-430,
@@ -837,8 +846,8 @@ Profiles.Presets = {
                             ["enabled"]=true,
                             ["point"]="CENTER",
                             ["relativePoint"]="CENTER",
-                            ["x"]=345,
-                            ["y"]=-255,
+                            ["x"]=350,
+                            ["y"]=-260,
                         },
                         ["TargetCastBar"]={
                             ["x"]=0,
@@ -958,7 +967,7 @@ Profiles.Presets = {
                 ["skillTrackerEquippedWeaponsOnly"]=true,
                 ["speedrunSplits"]={
                     ["textStyle"]="OUTLINE",
-                    ["enabled"]=false,
+                    ["enabled"]=true,
                     ["showDays"]=false,
                     ["showPartials"]=false,
                 },

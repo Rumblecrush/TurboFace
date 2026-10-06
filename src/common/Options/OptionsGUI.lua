@@ -3042,7 +3042,7 @@ local function BuildMoversTab(c)
         end)
         return y - 26
     end
-    local function ElementCheckbox(parent, y, x, label, key)
+    local function ElementCheckbox(parent, y, x, label, key, positionOnly)
         parent, y = SectionParent(parent, y)
         local edb = EDB(key)
 
@@ -3062,35 +3062,37 @@ local function BuildMoversTab(c)
             RefreshMovers()
         end)
 
-        local h = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-        h:SetSize(18, 18)
-        h:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 92, y + 1)
-        h:SetChecked(edb.hidden == true)
-        local hLbl = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        hLbl:SetPoint("LEFT", h, "RIGHT", 1, 0)
-        hLbl:SetText("H")
-        hLbl:SetTextColor(0.7, 0.7, 0.7)
-        h:SetScript("OnClick", function(self)
-            ns:PlayCheckSound(self)
-            local checked = (self:GetChecked() == 1 or self:GetChecked() == true)
-            EDB(key).hidden = checked
-            if ns.Movers and ns.Movers.SetElementHidden then ns.Movers:SetElementHidden(key, checked) else RefreshMovers() end
-        end)
+        if not positionOnly then
+            local h = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+            h:SetSize(18, 18)
+            h:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 92, y + 1)
+            h:SetChecked(edb.hidden == true)
+            local hLbl = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            hLbl:SetPoint("LEFT", h, "RIGHT", 1, 0)
+            hLbl:SetText("H")
+            hLbl:SetTextColor(0.7, 0.7, 0.7)
+            h:SetScript("OnClick", function(self)
+                ns:PlayCheckSound(self)
+                local checked = (self:GetChecked() == 1 or self:GetChecked() == true)
+                EDB(key).hidden = checked
+                if ns.Movers and ns.Movers.SetElementHidden then ns.Movers:SetElementHidden(key, checked) else RefreshMovers() end
+            end)
 
-        local ct = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-        ct:SetSize(18, 18)
-        ct:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 132, y + 1)
-        ct:SetChecked(edb.clickThrough == true)
-        local ctLbl = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        ctLbl:SetPoint("LEFT", ct, "RIGHT", 1, 0)
-        ctLbl:SetText("CT")
-        ctLbl:SetTextColor(0.7, 0.7, 0.7)
-        ct:SetScript("OnClick", function(self)
-            ns:PlayCheckSound(self)
-            local checked = (self:GetChecked() == 1 or self:GetChecked() == true)
-            EDB(key).clickThrough = checked
-            if ns.Movers and ns.Movers.SetElementClickThrough then ns.Movers:SetElementClickThrough(key, checked) else RefreshMovers() end
-        end)
+            local ct = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+            ct:SetSize(18, 18)
+            ct:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 132, y + 1)
+            ct:SetChecked(edb.clickThrough == true)
+            local ctLbl = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            ctLbl:SetPoint("LEFT", ct, "RIGHT", 1, 0)
+            ctLbl:SetText("CT")
+            ctLbl:SetTextColor(0.7, 0.7, 0.7)
+            ct:SetScript("OnClick", function(self)
+                ns:PlayCheckSound(self)
+                local checked = (self:GetChecked() == 1 or self:GetChecked() == true)
+                EDB(key).clickThrough = checked
+                if ns.Movers and ns.Movers.SetElementClickThrough then ns.Movers:SetElementClickThrough(key, checked) else RefreshMovers() end
+            end)
+        end
 
         return y - 26
     end
@@ -3137,7 +3139,7 @@ local function BuildMoversTab(c)
         for i, entry in ipairs(rows) do
             local col = (i - 1) % 3
             local x = (col == 0) and 0 or ((col == 1) and GRID_COL2_X or GRID_COL3_X)
-            ElementCheckbox(parent, y, x, entry[1], entry[2])
+            ElementCheckbox(parent, y, x, entry[1], entry[2], entry[3] == true)
             if col == 2 or i == #rows then y = y - 26 end
         end
         return y
@@ -3185,6 +3187,9 @@ local function BuildMoversTab(c)
     end
     if ClientFeatureAvailable("movers.alertToasts", false) then
         table.insert(blizzardMovers, 2, { "Recipe / Alert Toasts", "AlertToasts" })
+    end
+    if ClientFeatureAvailable("movers.nativeTargetCastbar", false) then
+        table.insert(blizzardMovers, 2, { "Target Unit Cast Bar", "NativeTargetCastBar", true })
     end
     y = ElementRows(c, y, blizzardMovers)
     y = y - 6

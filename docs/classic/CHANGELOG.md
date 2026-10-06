@@ -1,5 +1,12 @@
 # TurboFace Classic Changelog
 
+## 0.19.3 — refreshed Rumblecrush preset
+
+- Refreshed **Rumblecrush's Preset** from the 2026-10-06 profile export. Shared
+  settings now enable nameplate swing timers and Speedrun Splits and move Target
+  of Target to `CENTER (350, -260)`. The saved Forever-only native castbar mover
+  state remains inert on Classic.
+
 ## 0.19.2 — persistent nameplate combo snapshots
 
 - Nameplate combo points now remain on their visible target plate after deselecting it or selecting

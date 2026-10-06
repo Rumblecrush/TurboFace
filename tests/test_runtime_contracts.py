@@ -1046,7 +1046,7 @@ end
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_rumblecrush_preset_matches_2026_09_29_export(self) -> None:
+    def test_rumblecrush_preset_matches_2026_10_06_export(self) -> None:
         luajit = shutil.which("luajit")
         self.assertIsNotNone(luajit, "LuaJIT is required for the preset contract")
         harness = r'''
@@ -1074,7 +1074,7 @@ local function overlay(target, source)
     end
 end
 overlay(data, preset.data)
-assert(preset.desc == "2026-09-29")
+assert(preset.desc == "2026-10-06")
 assert(data.groceryButtonSize == 48)
 assert(data.auraTargetBuffScale == 1.3500000238418579)
 assert(data.auraTargetDebuffScale == 1.3500000238418579)
@@ -1082,12 +1082,19 @@ assert(data.modules.unitframes.enabled == false)
 assert(data.modules.castBars.enabled == false)
 assert(data.modules.plus.minimap == true and data.modules.plus.social == false)
 assert(data.plus.unclampMinimap == true and data.plus.minimapShape == "round")
-assert(data.movers.activeElement == "GroceryButton")
+assert(data.bubbleNameplates.swingTimer == true)
+assert(data.speedrunSplits.enabled == true)
+assert(data.movers.activeElement == "NativeTargetCastBar")
 assert(data.movers.gridSize == 20)
 assert(data.movers.elements.AlertToasts.x == 0 and data.movers.elements.AlertToasts.y == 220)
 assert(data.movers.elements.GroceryButton.x == 555 and data.movers.elements.GroceryButton.y == -573)
 assert(data.movers.elements.TargetBuffs.x == 365 and data.movers.elements.TargetBuffs.y == -302)
 assert(data.movers.elements.TargetDebuffs.x == 125 and data.movers.elements.TargetDebuffs.y == -260)
+assert(data.movers.elements.TargetFrameToT.x == 350 and data.movers.elements.TargetFrameToT.y == -260)
+assert(data.movers.elements.NativeTargetCastBar.enabled == true)
+assert(data.movers.elements.NativeTargetCastBar.point == "CENTER")
+assert(data.movers.elements.NativeTargetCastBar.relativePoint == "CENTER")
+assert(data.movers.elements.NativeTargetCastBar.x == 145 and data.movers.elements.NativeTargetCastBar.y == -375)
 assert(data.combinedBag.x == -21.111124038696289 and data.combinedBag.y == -127.38897705078131)
 '''
         result = subprocess.run(
@@ -1397,6 +1404,30 @@ assert(ns.Cadence:Count() == 0, "cadence scheduler did not park when empty")
         self.assertNotIn("NewRecipeLearnedAlertSystem.alertFramePool:Acquire", movers)
         self.assertIn('ClientFeatureAvailable("movers.alertToasts", false)', options)
         self.assertIn('{ "Recipe / Alert Toasts", "AlertToasts" }', options)
+
+    def test_forever_native_target_castbar_mover_is_position_only(self) -> None:
+        client = (ROOT / "src" / "common" / "Core" / "Client.lua").read_text()
+        movers = (ROOT / "src" / "common" / "Movers" / "Movers.lua").read_text()
+        systems = (ROOT / "src" / "common" / "Movers" / "Systems.lua").read_text()
+        options = (ROOT / "src" / "common" / "Options" / "OptionsGUI.lua").read_text()
+        adapter = (ROOT / "src" / "forever" / "Movers" / "ForeverTargetCastbar.lua").read_text()
+        toc = (ROOT / "src" / "forever" / "TurboFace.toc").read_text()
+
+        self.assertIn('["movers.nativeTargetCastbar"]', client)
+        self.assertIn('Override("movers.nativeTargetCastbar", "adapted", true', client)
+        self.assertIn("info.positionOnly = opts.positionOnly == true", movers)
+        self.assertIn("if info.positionOnly then", movers)
+        self.assertIn("self:RegisterNativeTargetCastbarMover()", systems)
+        self.assertIn('ClientFeatureAvailable("movers.nativeTargetCastbar", false)', options)
+        self.assertIn('{ "Target Unit Cast Bar", "NativeTargetCastBar", true }', options)
+        self.assertIn('local ELEMENT_ID = "NativeTargetCastBar"', adapter)
+        self.assertIn("_G.TargetFrameSpellBar", adapter)
+        self.assertIn('frame:SetPoint("CENTER", moverAnchor, "CENTER", 0, 0)', adapter)
+        self.assertIn("NativeWriteBlocked(frame)", adapter)
+        self.assertIn("Target_Spellbar_AdjustPosition", adapter)
+        self.assertNotIn("UnitCastingInfo", adapter)
+        self.assertNotIn("UnitChannelInfo", adapter)
+        self.assertIn("Movers\\ForeverTargetCastbar.lua", toc)
 
     def test_grocery_launcher_size_updates_button_border_and_mover(self) -> None:
         defaults = (ROOT / "src" / "common" / "Core" / "Defaults.lua").read_text()

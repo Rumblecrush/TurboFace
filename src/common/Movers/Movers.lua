@@ -367,6 +367,10 @@ end
 
 local function ApplyInteractionState(id, info)
     if not id or not info then return end
+    if info.positionOnly then
+        ReleaseInteractionState(info)
+        return
+    end
     local edb = ElementDB(id)
     local hidden = edb.hidden == true
     local clickThrough = edb.clickThrough == true
@@ -610,6 +614,12 @@ end
 
 local function UpdatePrecisionPanelButtons(id, panel)
     if not panel then return end
+    local info = elements[id]
+    if info and info.positionOnly then
+        if panel.hideBtn then panel.hideBtn:Hide() end
+        if panel.clickBtn then panel.clickBtn:Hide() end
+        return
+    end
     local edb = ElementDB(id)
     if panel.hideBtn then
         panel.hideBtn:SetText(edb.hidden == true and "Hide: On" or "Hide: Off")
@@ -1037,6 +1047,7 @@ function M:RegisterElement(id, frame, opts)
     info.hiddenVisualOnly = opts.hiddenVisualOnly == true or info.hiddenVisualOnly == true
     info.onApply = opts.onApply or info.onApply
     info.isAvailable = opts.isAvailable or info.isAvailable
+    info.positionOnly = opts.positionOnly == true
 
     if not info.overlay then CreateOverlay(id, info) end
 
@@ -1078,6 +1089,7 @@ end
 function M:Refresh()
     local db = DB()
     if db.enabled == false then
+        if self.ReleaseNativeTargetCastbarMover then self:ReleaseNativeTargetCastbarMover() end
         M.active = false
         if eventFrame then eventFrame:UnregisterAllEvents() end
         if auraDriver then auraDriver:Hide() end
@@ -1140,6 +1152,7 @@ end
 function M:SetElementHidden(id, hidden)
     local info = elements[id]
     if not info then return end
+    if info.positionOnly then return end
     local edb = ElementDB(id)
     edb.hidden = hidden == true
     self:SetActiveElement(id, false)
@@ -1152,6 +1165,7 @@ end
 function M:SetElementClickThrough(id, clickThrough)
     local info = elements[id]
     if not info then return end
+    if info.positionOnly then return end
     local edb = ElementDB(id)
     edb.clickThrough = clickThrough == true
     self:SetActiveElement(id, false)
