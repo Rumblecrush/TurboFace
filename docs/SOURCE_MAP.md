@@ -1,10 +1,10 @@
 # TurboFace source map
 
-**Audit date:** 2026-10-05
+**Audit date:** 2026-10-06
 
-**Classic:** 0.19.2 / Interface 11509
+**Classic:** 0.19.3 / Interface 11509
 
-**Forever:** 0.19.2 / Interface 16001
+**Forever:** 0.19.3 / Interface 16001
 
 This document describes the current physical source and package ownership. It
 is not a feature-parity matrix: one differing line can represent a critical
@@ -15,14 +15,14 @@ protected-frame or secret-value boundary.
 | Class | Count |
 |---|---:|
 | Classic packaged files | 182 |
-| Forever packaged files | 195 |
+| Forever packaged files | 196 |
 | Same relative path | 181 |
 | Byte-identical same-path files | 176 |
 | Same-path but different contents | 5 |
 | Classic-only paths | 1 |
-| Forever-only paths | 14 |
+| Forever-only paths | 15 |
 
-The union is 196 relative paths. Generated packages are the exact overlay of
+The union is 197 relative paths. Generated packages are the exact overlay of
 `src/common/` with `src/classic/` or `src/forever/`.
 
 ## First-party source
@@ -63,7 +63,7 @@ Classic has one exclusive packaged path:
 
 - `Textures/BankIcon.tga`
 
-Forever has fourteen exclusive packaged paths:
+Forever has fifteen exclusive packaged paths:
 
 - `Combat/BlizzardDamageMeterBridge.lua`
 - `Combat/ForeverNativeAdapter.lua`
@@ -74,6 +74,7 @@ Forever has fourteen exclusive packaged paths:
 - `Nameplates/ForeverAuras.lua`
 - `Nameplates/ForeverNativeAdapter.lua`
 - `Movers/ForeverAuraAdapter.lua`
+- `Movers/ForeverTargetCastbar.lua`
 - `Plus/ForeverNativeAdapter.lua`
 - `SpendTalentPoint.lua`
 - `Trainer/ForeverNativeAdapter.lua`

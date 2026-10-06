@@ -213,6 +213,7 @@ local FEATURES = {
     ["plus.combinedBagMovable"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic uses separate bag-window ownership"),
     ["plus.minimapEdgePlacement"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic does not use the Forever Edit Mode minimap cluster"),
     ["movers.alertToasts"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic does not expose the Forever pooled alert-toast stack"),
+    ["movers.nativeTargetCastbar"] = Row("shared", false, VALIDATION.CLASSIC_BASELINE, "none", "Classic uses TurboFace's own optional target castbar mover"),
     ["plus.vendorPrice"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "TurboFace vendor-price tooltip augmentation"),
     ["combat.classBuffTalentReminder"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "Classic ClassBuffs unspent-talent icon reminder"),
     ["combat.reactiveNameplateIndicator"] = Row("shared", true, VALIDATION.CLASSIC_BASELINE, "turboface", "Classic reactive ability indicator on Era nameplates"),
@@ -250,6 +251,7 @@ if isForever then
     Override("plus.combinedBagMovable", "adapted", true, VALIDATION.LIVE_VALIDATED, "forever", "TurboFace can move Blizzard's combined bag through the Forever Interface adapter")
     Override("plus.minimapEdgePlacement", "adapted", true, VALIDATION.LIVE_PARTIAL, "forever", "TurboFace relaxes Blizzard Edit Mode's MinimapCluster screen clamp while preserving Blizzard anchor persistence")
     Override("movers.alertToasts", "adapted", true, VALIDATION.LIVE_PARTIAL, "forever", "TurboFace moves Blizzard's stable AlertFrame base anchor while preserving pooled toast ownership")
+    Override("movers.nativeTargetCastbar", "adapted", true, VALIDATION.PREPARED, "forever", "TurboFace moves only Blizzard's native TargetFrameSpellBar anchor and leaves cast state/rendering native")
     Override("plus.vendorPrice", "blizzard-owned", false, VALIDATION.LIVE_VALIDATED, "blizzard", "Forever tooltip ownership replaces TurboFace's legacy vendor-price augmentation")
     Override("combat.classBuffTalentReminder", "adapted", false, VALIDATION.LIVE_VALIDATED, "forever", "Forever owns unspent talent points through the standalone Speedrun text reminder")
     Override("combat.reactiveNameplateIndicator", "blocked", false, VALIDATION.BLOCKED, "none", "Forever pooled CompactUnitFrames forbid the Classic reactive-indicator ownership model")
