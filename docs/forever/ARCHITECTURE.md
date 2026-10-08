@@ -5,12 +5,12 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
 **Last updated:** 2026-10-06
-**Current addon version:** 0.19.3
+**Current addon version:** 0.19.4
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
 **Forever client settings revision:** 2  
-**Source baseline:** TurboFace unified 0.19.3
+**Source baseline:** TurboFace unified 0.19.4
 **Status:** supported multi-client build; shared systems, Forever-specific adapters, and deliberately reduced or dormant features are classified below.
 
 This file is the **present-tense runtime and ownership contract** for TurboFace Forever. It is not a port diary. Release history, regressions, live discoveries, and dated rationale belong in [`CHANGELOG.md`](CHANGELOG.md); validation requirements belong beside the subsystem contracts below.
@@ -925,9 +925,13 @@ LibProfessionDB identity scrub removes recipe IDs written by older builds. Class
 exact spell identity for unranked abilities. Ranked entries use the cached live spellbook
 name/rank snapshot as their authority because Forever can report every numeric ID in a learned
 rank family as known; the family predicate must not promote future ranks into Already Known. The
-snapshot also records each spellbook slot's exact spell ID through the compatibility facade and
-maps it to the active class catalog. If a trainer family begins at Rank 2, an unmatched spellbook
-ID is its built-in Rank 1 even when Forever's family subtext claims otherwise.
+snapshot also records each spellbook slot's base `actionID` through the compatibility facade and
+maps it to the active class catalog. The modern record's optional `spellID` is an active override,
+not learned-rank identity, and is deliberately secondary. If a trainer family begins at Rank 2, an
+unmatched base ID is its built-in Rank 1 even when Forever's family subtext or override claims
+otherwise. Catalog level requirements provide an additional hard ceiling: a spellbook alias cannot
+mark a trainer rank as learned before the character could have trained it. The snapshot is rebuilt
+when the character level changes, even without a spellbook-change event.
 
 ### 15.3 Load-on-demand spell data
 

@@ -361,6 +361,8 @@ assert(result.profession[1].rank == 42 and result.profession[1].maxRank == 75)
         harness = r'''
 function wipe(t) for key in pairs(t) do t[key] = nil end end
 BOOKTYPE_SPELL = "spell"
+local playerLevel = 60
+function UnitLevel() return playerLevel end
 
 local spellbook = {
     { "Rend", "Rank 2", 6546 },
@@ -371,7 +373,8 @@ local ns = {
     API = {
         GetSpellInfo = function(id)
             if id == 772 or id == 6546 or id == 6547 then return "Rend" end
-            if id == 6673 then return "Battle Shout" end
+            if id == 78 or id == 284 or id == 285 then return "Heroic Strike" end
+            if id == 6673 or id == 5242 then return "Battle Shout" end
             if id == 1752 or id == 1757 or id == 1758 then return "Sinister Strike" end
         end,
         GetNumSpellTabs = function() return 1 end,
@@ -408,6 +411,56 @@ assert(trainer:IsClassSpellKnown(772, "Rend", 1, true))
 assert(trainer:IsClassSpellKnown(6546, "Rend", 2, true))
 assert(not trainer:IsClassSpellKnown(6547, "Rend", 3, true))
 assert(trainer:IsClassSpellKnown(6673, "Battle Shout", 1, false))
+
+-- Forever's modern SpellBookItemInfo can expose a Rank 2 spellID override for
+-- an untrained starter slot while actionID still carries the learned base rank.
+-- The compatibility layer passes that base actionID into this scanner.
+spellbook = {
+    { "Heroic Strike", "Rank 2", 78 },
+    { "Rend", "Rank 2", 772 },
+}
+trainer:PrimeClassSpellRankCatalog({
+    [4] = { [772] = { rank = 1 } },
+    [8] = { [284] = { rank = 2 } },
+    [10] = { [6546] = { rank = 2 } },
+    [16] = { [285] = { rank = 3 } },
+    [20] = { [6547] = { rank = 3 } },
+})
+assert(not trainer:IsClassSpellKnown(284, "Heroic Strike", 2, true))
+assert(not trainer:IsClassSpellKnown(6546, "Rend", 2, true))
+
+spellbook = {
+    { "Heroic Strike", "Rank 2", 284 },
+    { "Rend", "Rank 2", 6546 },
+}
+trainer:InvalidateKnownSpellbookRanks()
+assert(trainer:IsClassSpellKnown(284, "Heroic Strike", 2, true))
+assert(trainer:IsClassSpellKnown(6546, "Rend", 2, true))
+assert(not trainer:IsClassSpellKnown(285, "Heroic Strike", 3, true))
+assert(not trainer:IsClassSpellKnown(6547, "Rend", 3, true))
+
+-- Battle Shout's base actionID is also aliased to Rank 2 on Forever. At level
+-- 10 that level-12 rank is impossible, so catalog level is an authoritative
+-- ceiling even when both modern spellbook IDs and subtext claim Rank 2.
+playerLevel = 10
+spellbook = { { "Battle Shout", "Rank 2", 5242 } }
+trainer:PrimeClassSpellRankCatalog({
+    [1] = { [6673] = { rank = 1 } },
+    [12] = { [5242] = { rank = 2 } },
+})
+assert(trainer:IsClassSpellKnown(6673, "Battle Shout", 1, true))
+assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
+-- Level-dependent snapshots must refresh even without SPELLS_CHANGED.
+playerLevel = 12
+assert(trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
+playerLevel = 10
+assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
+-- Live level requirements take precedence over the catalog bucket.
+trainer:PrimeClassSpellRankCatalog({
+    [1] = { [6673] = { rank = 1 }, [5242] = { rank = 2, levelReq = 12 } },
+})
+assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
+playerLevel = 60
 
 -- Forever can expose misleading family rank text for a built-in starter
 -- ability. The exact spellbook ID is Rank 1 because the trainer catalog starts
@@ -448,6 +501,60 @@ assert(trainer:IsClassSpellKnown(6547, "Rend", 3, true))
             [luajit, "-"], input=harness, cwd=ROOT, text=True, capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_spellbook_slot_identity_adapters(self) -> None:
+        luajit = shutil.which("luajit")
+        self.assertIsNotNone(luajit)
+        for flavor in ("classic", "forever"):
+            source = (ROOT / "src" / flavor / "Core" / "Compat.lua").read_text()
+            adapter = source.split("API.GetSpellBookItemSpellID = ", 1)[1].split("\n-- ===", 1)[0]
+            harness = r'''
+local readable = true
+local API = { CanAccessValue = function() return readable end }
+local function pick(native, modern)
+    return native or modern or function() end
+end
+Enum = { SpellBookSpellBank = { Player = 7 } }
+local record = { actionID = 78, spellID = 284 }
+C_SpellBook = { GetSpellBookItemInfo = function(index, bank)
+    assert(index == 3 and bank == 7)
+    return record
+end }
+local function resolve()
+    API.GetSpellBookItemSpellID = ADAPTER
+    return API.GetSpellBookItemSpellID(3, "spell")
+end
+assert(resolve() == 78)
+record = { spellID = 284 }
+assert(resolve() == 284)
+record = {}
+assert(resolve() == nil)
+record = nil
+assert(resolve() == nil)
+C_SpellBook.GetSpellBookItemInfo = function() error("unavailable") end
+assert(resolve() == nil)
+C_SpellBook.GetSpellBookItemInfo = function() return { actionID = 78 } end
+if "FLAVOR" == "forever" then
+    readable = false
+    assert(resolve() == nil)
+    readable = true
+end
+GetSpellBookItemInfo = function(index, book)
+    assert(index == 3 and book == "spell")
+    return "SPELL", 6546
+end
+assert(resolve() == 6546)
+GetSpellBookItemInfo = function() return "FUTURESPELL", 6547 end
+assert(resolve() == 6547)
+GetSpellBookItemInfo = function() return "FLYOUT", 99 end
+assert(resolve() == nil)
+GetSpellBookItemInfo = nil
+C_SpellBook = nil
+assert(resolve() == nil)
+'''.replace("ADAPTER", adapter).replace("FLAVOR", flavor)
+            with self.subTest(flavor=flavor):
+                result = subprocess.run([luajit, "-"], input=harness, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_quest_automation_defers_and_serializes_npc_actions(self) -> None:
         luajit = shutil.which("luajit")

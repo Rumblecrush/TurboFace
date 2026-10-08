@@ -1,5 +1,18 @@
 # TurboFace Classic Changelog
 
+## 0.19.4 — starter-rank spellbook identity
+
+- Modern spellbook fallback now uses the base spellbook `actionID` before an
+  optional override when determining learned class ranks. This keeps starter
+  Rank 2 rows visible until their real base rank is trained.
+- Learned-rank snapshots now reject any catalog rank above the character's
+  current level, providing a safe ceiling when a modern client aliases a
+  low-rank spellbook slot to a future trainer rank.
+- Level-dependent learned-rank snapshots refresh automatically when the
+  character level changes.
+- Corrected Heroic Strike Rank 2's seeded prerequisite from a self-reference to
+  the actual Rank 1 spell ID.
+
 ## 0.19.3 — refreshed Rumblecrush preset
 
 - Refreshed **Rumblecrush's Preset** from the 2026-10-06 profile export. Shared

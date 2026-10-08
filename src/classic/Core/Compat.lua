@@ -558,7 +558,9 @@ end, C_SpellBook and C_SpellBook.GetSpellBookItemInfo and function(index, bookTy
     local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
     local ok, info = pcall(C_SpellBook.GetSpellBookItemInfo, index, bank)
     if not ok then return nil end
-    return info and (info.spellID or info.actionID) or nil
+    -- Modern actionID is the base spellbook-slot identity; spellID may be an
+    -- active override and must not replace it for learned-rank accounting.
+    return info and (info.actionID or info.spellID) or nil
 end)
 
 -- =============================================================================

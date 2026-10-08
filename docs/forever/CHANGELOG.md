@@ -1,5 +1,20 @@
 # TurboFace Forever Changelog
 
+## 0.19.4 — starter-rank spellbook identity
+
+- Fixed Class Training still hiding starter-family Rank 2 rows such as Warrior
+  Heroic Strike and Rend. Forever's modern spellbook exposes both a base
+  `actionID` and an optional overridden `spellID`; learned-rank accounting now
+  uses the base slot identity so a Rank 2 override cannot make an untrained rank
+  appear already known.
+- Added a catalog-level ceiling for Forever aliases that identify a spellbook
+  slot as a trainer rank above the character's current level. This restores
+  Battle Shout Rank 2 to the level-10 Warrior's future training list.
+- Level-dependent learned-rank snapshots refresh automatically when the
+  character level changes.
+- Corrected Heroic Strike Rank 2's seeded prerequisite from a self-reference to
+  the actual Rank 1 spell ID.
+
 ## 0.19.3 — native target castbar mover
 
 - Refreshed **Rumblecrush's Preset** from the 2026-10-06 profile export. The

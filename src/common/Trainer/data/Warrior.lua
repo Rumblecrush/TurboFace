@@ -40,7 +40,7 @@ Trainer.Builtin.WARRIOR = Trainer.Builtin.WARRIOR or {
         [284] = {
             cost = 200,
             rank = 2,
-            requires = {284}
+            requires = {78}
         },
         [1715] = {
             cost = 200,
