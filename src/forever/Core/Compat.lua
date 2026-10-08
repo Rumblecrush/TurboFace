@@ -891,7 +891,11 @@ end, C_SpellBook and C_SpellBook.GetSpellBookItemInfo and function(index, bookTy
     local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
     local ok, info = pcall(C_SpellBook.GetSpellBookItemInfo, index, bank)
     if not ok or type(info) ~= "table" or not API.CanAccessValue(info) then return nil end
-    local spellID = info.spellID or info.actionID
+    -- actionID is the base identity stored in this spellbook slot. spellID is
+    -- an optional active override and Forever can point a starter ability at
+    -- its Rank 2 family member before that rank is actually trained. Learned
+    -- rank detection must follow the slot identity, not the override.
+    local spellID = info.actionID or info.spellID
     if not API.CanAccessValue(spellID) then return nil end
     return spellID
 end)

@@ -12,7 +12,10 @@ local GetSpellBookItemSpellID = ns.API.GetSpellBookItemSpellID
 -- Class Training list and its auto-training queue.
 local knownSpellbookRanks = {}
 local knownSpellbookRanksDirty = true
+local knownSpellbookRanksLevel
 local classRankBySpellID = {}
+local classLevelBySpellID = {}
+local classRanksByName = {}
 local firstTrainerRankByName = {}
 local classRankCatalogSource
 
@@ -30,17 +33,28 @@ function Trainer:PrimeClassSpellRankCatalog(dataTable)
     if classRankCatalogSource == dataTable then return end
     classRankCatalogSource = dataTable
     wipe(classRankBySpellID)
+    wipe(classLevelBySpellID)
+    wipe(classRanksByName)
     wipe(firstTrainerRankByName)
 
-    for _, spells in pairs(dataTable or {}) do
+    for level, spells in pairs(dataTable or {}) do
         for spellID, data in pairs(spells) do
             local rank = type(data) == "table" and tonumber(data.rank) or nil
+            local requiredLevel = type(data) == "table" and tonumber(data.levelReq)
+                or tonumber(level)
             spellID = tonumber(spellID)
             if spellID and rank then
                 classRankBySpellID[spellID] = rank
+                classLevelBySpellID[spellID] = requiredLevel
                 local name = GetSpellInfo and GetSpellInfo(spellID) or nil
                 if type(name) == "string" and name ~= "" then
                     firstTrainerRankByName[name] = math.min(firstTrainerRankByName[name] or rank, rank)
+                    local ranks = classRanksByName[name]
+                    if not ranks then
+                        ranks = {}
+                        classRanksByName[name] = ranks
+                    end
+                    ranks[#ranks + 1] = { rank = rank, level = requiredLevel }
                 end
             end
         end
@@ -50,7 +64,11 @@ function Trainer:PrimeClassSpellRankCatalog(dataTable)
 end
 
 function Trainer:GetKnownSpellbookRanks()
-    if not knownSpellbookRanksDirty then return knownSpellbookRanks end
+    local playerLevel = UnitLevel and tonumber(UnitLevel("player")) or nil
+    if not knownSpellbookRanksDirty and knownSpellbookRanksLevel == playerLevel then
+        return knownSpellbookRanks
+    end
+    knownSpellbookRanksLevel = playerLevel
     wipe(knownSpellbookRanks)
 
     if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
@@ -64,6 +82,21 @@ function Trainer:GetKnownSpellbookRanks()
                     local spellID = GetSpellBookItemSpellID
                         and tonumber(GetSpellBookItemSpellID(index, BOOKTYPE_SPELL or "spell")) or nil
                     local rank = spellID and classRankBySpellID[spellID] or nil
+                    local rankLevel = spellID and classLevelBySpellID[spellID] or nil
+                    if rank and rankLevel and playerLevel and rankLevel > playerLevel then
+                        -- Forever can alias a learned low-rank slot directly to
+                        -- a future trainer rank. A character cannot already own
+                        -- a catalog rank above their level, so clamp the slot to
+                        -- the highest rank that was actually attainable. Rank 1
+                        -- remains the implicit floor for starter families whose
+                        -- catalog begins at Rank 2.
+                        rank = 1
+                        for _, candidate in ipairs(classRanksByName[name] or {}) do
+                            if candidate.level and candidate.level <= playerLevel then
+                                rank = math.max(rank, candidate.rank)
+                            end
+                        end
+                    end
                     if not rank then
                         rank = type(subText) == "string" and tonumber(subText:match("%d+")) or nil
                     end
@@ -94,7 +127,7 @@ function Trainer:IsClassSpellKnown(spellID, name, rankNum, hasRealRank)
         -- Forever's retail-derived IsSpellKnown/C_SpellBook predicate can
         -- answer true for every ID in a learned rank chain. It therefore says
         -- Rend Rank 2 is known when the spellbook contains only Rank 1. The
-        -- spellbook's displayed subtext is the rank authority; never let the
+        -- normalized spellbook snapshot is the rank authority; never let the
         -- family-level predicate promote an unlearned rank into Already Known.
         return knownRank ~= nil and knownRank >= (tonumber(rankNum) or 1)
     end
