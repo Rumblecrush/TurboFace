@@ -1,10 +1,10 @@
 # TurboFace source map
 
-**Audit date:** 2026-10-06
+**Audit date:** 2026-10-09
 
-**Classic:** 0.19.4 / Interface 11509
+**Classic:** 0.20.0 / Interface 11509
 
-**Forever:** 0.19.4 / Interface 16001
+**Forever:** 0.20.0 / Interface 16001
 
 This document describes the current physical source and package ownership. It
 is not a feature-parity matrix: one differing line can represent a critical
@@ -14,15 +14,15 @@ protected-frame or secret-value boundary.
 
 | Class | Count |
 |---|---:|
-| Classic packaged files | 182 |
-| Forever packaged files | 196 |
-| Same relative path | 181 |
-| Byte-identical same-path files | 176 |
+| Classic packaged files | 184 |
+| Forever packaged files | 198 |
+| Same relative path | 182 |
+| Byte-identical same-path files | 177 |
 | Same-path but different contents | 5 |
-| Classic-only paths | 1 |
-| Forever-only paths | 15 |
+| Classic-only paths | 2 |
+| Forever-only paths | 16 |
 
-The union is 197 relative paths. Generated packages are the exact overlay of
+The union is 200 relative paths. Generated packages are the exact overlay of
 `src/common/` with `src/classic/` or `src/forever/`.
 
 ## First-party source
@@ -32,7 +32,7 @@ and package notices:
 
 | Classification | Count |
 |---|---:|
-| Byte-identical | 107 |
+| Byte-identical | 108 |
 | Intentional client-owned divergence | 3 |
 
 The three first-party divergences are:
@@ -59,11 +59,12 @@ layer, or a new client overlap, requires an explicit ownership decision.
 
 ## Client-exclusive paths
 
-Classic has one exclusive packaged path:
+Classic has two exclusive packaged paths:
 
 - `Textures/BankIcon.tga`
+- `Trainer/ClassicRankChains.lua`
 
-Forever has fifteen exclusive packaged paths:
+Forever has sixteen exclusive packaged paths:
 
 - `Combat/BlizzardDamageMeterBridge.lua`
 - `Combat/ForeverNativeAdapter.lua`
@@ -78,6 +79,7 @@ Forever has fifteen exclusive packaged paths:
 - `Plus/ForeverNativeAdapter.lua`
 - `SpendTalentPoint.lua`
 - `Trainer/ForeverNativeAdapter.lua`
+- `Trainer/ForeverRankChains.lua`
 - `Trainer/data/ForeverProfessions.lua`
 - `UnitFrames/ForeverNativeAdapter.lua`
 
@@ -110,3 +112,6 @@ python3 -m unittest discover -s tests -v
 The verifier derives current source/package inventories, enforces the five
 intentional overlaps, checks direct client-identity boundaries, and confirms
 that both generated packages match their source overlays.
+
+`StickyNote.lua` owns the shared draggable personal note, storing text, position,
+and visibility in `TurboFaceCharDB.stickyNote` outside profile imports.

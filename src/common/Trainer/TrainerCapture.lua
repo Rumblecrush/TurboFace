@@ -87,7 +87,8 @@ local function CaptureTrainerInner()
     if not rankFound then return end
     for i = 1, numServices do
         local name, rankText, sType = Trainer:GetTrainerServiceInfoCompat(i)
-        local rank = rankText and tonumber(rankText:match("%d+"))
+        local rank = type(rankText) == "number" and rankText
+            or (type(rankText) == "string" and tonumber(rankText:match("%d+")))
         local levelReq = GetTrainerServiceLevelReq and GetTrainerServiceLevelReq(i) or 0
         if (rank ~= nil or levelReq ~= nil) and (sType == "available" or sType == "unavailable" or sType == "used") then
             local cost = GetTrainerServiceCost and GetTrainerServiceCost(i) or 0
@@ -108,7 +109,7 @@ local function CaptureTrainerInner()
                     spellID = spellID or (existing and existing.spellID),
                     icon = icon or (existing and existing.icon),
                     cost = cost,
-                    rank = rank,
+                    rank = rank or (existing and existing.rank),
                     -- Preserve the raw rank label (for example "Journeyman") so
                     -- SkillData can match proficiency upgrades even when the
                     -- trainer service and learned spell use different IDs.
@@ -153,7 +154,7 @@ local function CaptureTrainerInner()
                         bucket[spellID] = {
                             icon = (GetTrainerServiceIcon and GetTrainerServiceIcon(i)) or (existing and existing.icon),
                             cost = (cost and cost > 0 and cost) or (existing and existing.cost),
-                            rank = rank,
+                            rank = rank or (existing and existing.rank),
                             levelReq = (levelReq and levelReq > 0) and levelReq or nil,
                             source = (Trainer:IsProfessionStarterSpell(spellID) or Trainer:IsProfessionRankSpell(spellID)) and "Profession Trainer" or "Weapon Master",
                             requires = existing and existing.requires,
@@ -168,7 +169,7 @@ local function CaptureTrainerInner()
                         local existing = bucket[spellID]
                         bucket[spellID] = {
                             cost = cost,
-                            rank = rank,
+                            rank = rank or (existing and existing.rank),
                             requires = existing and existing.requires,
                             faction = existing and existing.faction,
                             race = existing and existing.race

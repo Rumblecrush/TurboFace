@@ -435,6 +435,11 @@ if USES_TALENT_REMINDER then
     }
 end
 
+MYBUFFS[#MYBUFFS + 1] = {
+    key = "weaponStones", label = "Weapon Stone",
+    dbKey = "classBuffWeaponStones", type = "weaponStones", icon = 135248,
+}
+
 local HAS_REACTIVE = false
 for _, entry in ipairs(MYBUFFS) do
     if entry.type == "reactive" then HAS_REACTIVE = true break end
@@ -537,6 +542,9 @@ local function RebuildCaches()
             -- Trained ability, so a real spellbook gate (unlike procBuff).
             EnsureBuffEntryCache(e)
             knownCache[e.key] = KnowsAny(e.spellIDs)
+        elseif e.type == "weaponStones" then
+            knownCache[e.key] = true
+            iconCache[e.key] = e.icon
         elseif e.type == "talents" then
             -- Always "known": every character can earn talent points.
             knownCache[e.key] = true
@@ -951,9 +959,60 @@ local function IsReactiveReady(e)
 end
 
 -- entry should nag right now?
+-- Ordinary Classic stones, highest rank first. Item metadata supplies the
+-- client's level requirement; uncached metadata fails closed and is retried.
+local STONE_ITEMS = {
+    sharp = {12404, 7964, 2871, 2862, 2678},
+    blunt = {12643, 7965, 3241, 3240, 3239},
+}
+local STONE_WEAPONS = {
+    [0] = "sharp", [1] = "sharp", [6] = "sharp", [7] = "sharp",
+    [8] = "sharp", [15] = "sharp",
+    [4] = "blunt", [5] = "blunt", [10] = "blunt", [13] = "blunt",
+}
+local function FindBaggedWeaponStone()
+    -- Never use the retained combat enchant snapshot for an actionable item
+    -- reminder: unreadable state does not mean an uncoated weapon.
+    if InCombatLockdown() or UnitIsDeadOrGhost("player") then return nil end
+    local api = ns.API
+    if not api.ReadWeaponEnchantInfo or not api.GetItemInfoInstant
+        or not api.GetItemInfo or not api.GetItemCount then return nil end
+    local readable, mh, _, _, _, oh = api.ReadWeaponEnchantInfo()
+    if not readable then return nil end
+    local level = UnitLevel("player")
+    if type(level) ~= "number" or level < 1 then return nil end
+    for slot = 16, 17 do
+        local coated = (slot == 16 and mh) or (slot == 17 and oh)
+        if not coated then
+            local weapon = GetInventoryItemID("player", slot)
+            if weapon then
+                local _, _, _, _, _, classID, subclassID = api.GetItemInfoInstant(weapon)
+                local family = classID == 2 and STONE_WEAPONS[subclassID]
+                if family then
+                    for _, itemID in ipairs(STONE_ITEMS[family]) do
+                        -- These consumables cannot be equipped. Excluding bank
+                        -- and reagent-bank counts leaves only carried stones.
+                        if (api.GetItemCount(itemID, false, false, false) or 0) > 0 then
+                            local name, _, _, _, minLevel, _, _, _, _, texture = api.GetItemInfo(itemID)
+                            if name and type(minLevel) == "number" and level >= minLevel and texture then
+                                return itemID, texture
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function ShouldRemind(e, warnSec)
     if not knownCache[e.key] then return false end
     if ns.Opt(e.dbKey, true) == false then return false end
+    if e.type == "weaponStones" then
+        local itemID, texture = FindBaggedWeaponStone()
+        if itemID then iconCache[e.key] = texture end
+        return itemID ~= nil, 0
+    end
     -- Per-entry combat gate, separate from the global classBuffOnlyInCombat.
     -- Seals last 30s, so out of combat a seal reminder is permanently on and
     -- becomes noise rather than information.
@@ -1466,6 +1525,8 @@ local function HandleClassBuffEvent(_, event, unit, _arg2, spellID)
         if unit and unit ~= "player" then return end
         -- Coalesced: the storm case. See QueueEvaluate above.
         QueueEvaluate()
+    elseif event == "BAG_UPDATE_DELAYED" or event == "GET_ITEM_INFO_RECEIVED" or event == "PLAYER_LEVEL_UP" then
+        QueueEvaluate()
     elseif event == "CHARACTER_POINTS_CHANGED" and USES_TALENT_REMINDER then
         Evaluate()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -1523,6 +1584,9 @@ local function RegisterRuntimeEvents()
     frame:RegisterEvent("PLAYER_REGEN_ENABLED")
     frame:RegisterEvent("PLAYER_REGEN_DISABLED")
     frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    frame:RegisterEvent("BAG_UPDATE_DELAYED")
+    frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    frame:RegisterEvent("PLAYER_LEVEL_UP")
     frame:RegisterEvent("SPELLS_CHANGED")
     frame:RegisterEvent(ns.API.LEARNED_SPELL_EVENT)
     -- Leveling by itself does not change learned spells, localized spell names,

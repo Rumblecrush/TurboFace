@@ -5,7 +5,7 @@ The Forever Plus interface adapter may relax `MinimapCluster` screen clamping fo
 The Forever **Recipe / Alert Toasts** mover targets only Blizzard's stable `AlertFrame` base anchor. Individual `NewRecipeLearnedAlertFrameTemplate` instances remain owned by `NewRecipeLearnedAlertSystem` and its frame pool, preserving Blizzard's native queue, animations, and click behavior. Because the base is shared, other alert toasts in the same stack follow the mover as well.
 
 **Last updated:** 2026-10-06
-**Current addon version:** 0.19.4
+**Current addon version:** 0.20.0
 **Target client:** World of Warcraft Forever beta 1.60.1; packaged Interface 16001
 **Observed beta build:** 70170
 **Portable saved-variable schema:** 79  
@@ -922,16 +922,15 @@ Profession ownership is derived from the trainer services' profession skill line
 the surviving `IsTradeskillTrainer()` boolean. This prevents Forever profession recipes from being
 captured into the account-wide class catalog when the legacy boolean is stale. A one-time
 LibProfessionDB identity scrub removes recipe IDs written by older builds. Class learned state uses
-exact spell identity for unranked abilities. Ranked entries use the cached live spellbook
-name/rank snapshot as their authority because Forever can report every numeric ID in a learned
-rank family as known; the family predicate must not promote future ranks into Already Known. The
-snapshot also records each spellbook slot's base `actionID` through the compatibility facade and
-maps it to the active class catalog. The modern record's optional `spellID` is an active override,
-not learned-rank identity, and is deliberately secondary. If a trainer family begins at Rank 2, an
-unmatched base ID is its built-in Rank 1 even when Forever's family subtext or override claims
-otherwise. Catalog level requirements provide an additional hard ceiling: a spellbook alias cannot
-mark a trainer rank as learned before the character could have trained it. The snapshot is rebuilt
-when the character level changes, even without a spellbook-change event.
+explicit modern player-spellbook queries for all class spells, ranked or unranked.
+`API.IsClassSpellIDKnown` queries `C_SpellBook.IsSpellInSpellBook(id, Player, false)`
+and `C_SpellBook.IsSpellKnown(id, Player)`, matching What's Training?'s query path.
+A negative result cannot be replaced by slot metadata, level eligibility, legacy
+family predicates, or cached account-wide learned state. Missing/unreadable
+modern APIs conservatively leave the rank unlearned.
+`Trainer/ForeverRankChains.lua` contains the reference's Camelot replacement
+chains: only confirmed later members establish knowledge of earlier replaced
+IDs. The list and queue share this decision, including negative results.
 
 ### 15.3 Load-on-demand spell data
 
@@ -1633,3 +1632,22 @@ The unified tree now treats `Core/Compat.lua`, `Plus/InterfaceTweaks.lua`, and `
 ### Phase 33 repository baseline
 
 Canonical repository documentation lives under `docs/`; runtime source overlays no longer carry duplicate architecture/changelog/build-manifest snapshots. `tests/` and `build/verify.py` jointly enforce the Phase 32 convergence boundary, direct client-identity allowlist, documentation freshness, safe build destinations, and package inventory. Generated `dist/` output is disposable and ignored by Git.
+
+### Personal sticky note
+
+`StickyNote.lua` owns a lazily created draggable note. Text, center-relative
+position, open state, and collapsed state live in `TurboFaceCharDB.stickyNote`, outside portable
+profiles. The module restores visible notes at PLAYER_LOGIN without keyboard
+focus; text changes save immediately to the character table. The close button
+hides without deleting; resetting position preserves text. Open through Options,
+`/tf note`, or `/tfnote`; the same implementation serves both clients.
+
+The sticky note uses a muted charcoal background. Its +/- button hides the body
+while retaining the draggable header. Stored coordinates refer to the expanded
+center so the header stays in place across collapse, drag, expand, and reload.
+
+The Speedrun parent gate `stickyNoteEnabled` defaults to false. Disabled startup
+creates no note UI or character note data; the one-time login listener unregisters
+itself. Public actions respect the gate. Refresh hides an existing note and clears
+keyboard focus without changing the stored open preference, allowing restoration
+on re-enable. Profile application refreshes the gate independently of note data.

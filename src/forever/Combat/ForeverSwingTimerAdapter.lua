@@ -64,7 +64,7 @@ function Forever:UsesTargetCombatEstimator()
 end
 
 function Forever:ResetTargetCombat(guid)
-    targetEstimate.guid = guid
+    targetEstimate.guid = IsAccessible(guid) and type(guid) == "string" and guid or nil
     targetEstimate.lastAt = nil
     targetEstimate.interval = nil
 end
@@ -76,6 +76,7 @@ end
 -- deliberately treated as unknown rather than false so restricted encounters
 -- can continue to use the sanctioned event stream.
 function Forever:ObserveTargetCombat(unit, action, now)
+    if not IsAccessible(unit) or not IsAccessible(action) then return nil end
     if unit ~= "player" or not TARGET_COMBAT_RESULTS[action] then return nil end
     local targetExists = UnitExists("target")
     if IsAccessible(targetExists) and targetExists ~= true then return nil end

@@ -1841,6 +1841,11 @@ SlashCmdList["TURBOFACE"] = function(msg)
         local cmd, args = msg:match("^(%S+)%s*(.*)$")
         cmd = cmd and cmd:lower()
 
+        if cmd == "note" then
+            if ns.StickyNote then ns.StickyNote:HandleSlash(args) end
+            return
+        end
+
         if cmd == "dev" then
             local action = (args or ""):lower():match("^%s*(.-)%s*$") or ""
             action = action:gsub("%s+", " ")
