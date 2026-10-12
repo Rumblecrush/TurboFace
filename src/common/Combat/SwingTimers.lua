@@ -8,6 +8,7 @@ local GetSpellTexture = ns.API.GetSpellTexture
 local IsCurrentSpell = ns.API.IsCurrentSpell
 local IsReadableNumber = ns.API.IsReadableNumber or function(v) return type(v) == "number" end
 local UnitAttackSpeed = UnitAttackSpeed
+local UnitGUID = ns.API.GetUnitGUID
 
 -- The active Swing Timer provider decides whether the client exposes an
 -- authoritative PLAYER_SWING clock. When unavailable, the shared engine falls
@@ -373,6 +374,7 @@ local SwingTimers = {}
 ns.SwingTimers = SwingTimers
 
 function SwingTimers:GetNameplateState(guid)
+    guid = ns.API.ReadableGUID(guid)
     return guid and nameplateSwingStates[guid] or nil
 end
 
@@ -383,6 +385,7 @@ end
 -- The first real SWING_DAMAGE/SWING_MISSED immediately overwrites this seed with
 -- the authoritative speed-derived reset below.
 function SwingTimers:PrimeNameplateState(guid, unit)
+    guid = ns.API.ReadableGUID(guid)
     if not guid then return nil end
     local state = nameplateSwingStates[guid]
     if state then return state end
@@ -421,6 +424,7 @@ local function PrimeVisibleNameplateStates()
 end
 
 function SwingTimers:CleanupNameplateState(guid)
+    guid = ns.API.ReadableGUID(guid)
     if guid then nameplateSwingStates[guid] = nil end
 end
 
@@ -433,6 +437,7 @@ end
 -- hostile (the same attribution boundary as its Target Swing Timer), while
 -- Classic continues to populate this table from authoritative CLEU source GUIDs.
 function SwingTimers:RecordNameplateSwing(guid, duration, now)
+    guid = ns.API.ReadableGUID(guid)
     if not NameplateSwingGateOn() or not guid then return false end
     duration = tonumber(duration)
     if not duration or duration <= 0 then return false end
@@ -1237,6 +1242,7 @@ local function RecordPendingPlayerReset(isOffHand)
 end
 
 local function RecordTargetSwing(guid, isOffHand, speed)
+    guid = ns.API.ReadableGUID(guid)
     if not guid or not speed or speed <= 0 then return end
     local state = targetSwingStates[guid]
     if not state then
@@ -1255,6 +1261,7 @@ local function RecordTargetSwing(guid, isOffHand, speed)
 end
 
 local function RestoreTargetSwing(guid)
+    guid = ns.API.ReadableGUID(guid)
     local state = guid and targetSwingStates[guid]
     local now = GetTime() or 0
 
@@ -1278,6 +1285,7 @@ local function RestoreTargetSwing(guid)
 end
 
 local function SaveCurrentTargetSwing()
+    target.guid = ns.API.ReadableGUID(target.guid)
     if not target.guid then return end
     local state = targetSwingStates[target.guid]
     if not state then
@@ -1323,7 +1331,7 @@ local function OnNameplateCombatLog(combatInfo)
     local subevent = combatInfo[2]
     if subevent ~= "SWING_DAMAGE" and subevent ~= "SWING_MISSED" then return end
 
-    local sourceGUID = combatInfo[4]
+    local sourceGUID = ns.API.ReadableGUID(combatInfo[4])
     local unit = sourceGUID and ns.guidToNameplateUnit and ns.guidToNameplateUnit[sourceGUID]
     -- This owner tracks hostile attackable nameplates only. Friendly plates can
     -- also emit SWING_* while visible (duels, guards/NPC interactions, etc.);
@@ -1367,7 +1375,8 @@ end
 local function OnProviderTargetCombat(unit, action)
     local now = GetTime() or 0
     local duration, guid = ns.SwingTimerProviderObserveTargetCombat(unit, action, now)
-    if not duration then return end
+    guid = ns.API.ReadableGUID(guid)
+    if not IsReadableNumber(duration) or duration <= 0 or not guid then return end
 
     SwingTimers:RecordNameplateSwing(guid, duration, now)
     if runtimeActivated then
@@ -1386,8 +1395,8 @@ local function OnCombatLog(combatInfo)
     if not PLAYER_GUID then PLAYER_GUID = UnitGUID("player") end
 
     local subevent     = combatInfo[2]
-    local sourceGUID   = combatInfo[4]
-    local destGUID     = combatInfo[8]
+    local sourceGUID   = ns.API.ReadableGUID(combatInfo[4])
+    local destGUID     = ns.API.ReadableGUID(combatInfo[8])
 
     -- ── Player as SOURCE ─────────────────────────────────────────────────────
     if sourceGUID == PLAYER_GUID then

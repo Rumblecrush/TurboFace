@@ -117,6 +117,7 @@ ns.defaults = {
     -- per-buff toggles (Shaman)
     classBuffLightningShield = true,
     classBuffWeaponMH      = true,
+    classBuffWeaponStones  = true,
     classBuffClearcasting  = true,   -- Shaman: Elemental Focus proc (shows while ACTIVE)
 
     -- Hearthstone bind-location display (movable via token "Hearthstone").
@@ -872,6 +873,8 @@ ns.defaults = {
     -- so profile exports stay small.
     -- =========================================================================
     trainerEnabled     = true,     -- master enable for the trainer spell list
+
+    stickyNoteEnabled  = false,    -- opt-in personal note; content stays character-local
 
     groceryEnabled     = false,    -- master enable for the grocery system
     groceryAutoBuy     = true,     -- buy queued items when a merchant opens

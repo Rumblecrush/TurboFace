@@ -439,29 +439,6 @@ assert(trainer:IsClassSpellKnown(6546, "Rend", 2, true))
 assert(not trainer:IsClassSpellKnown(285, "Heroic Strike", 3, true))
 assert(not trainer:IsClassSpellKnown(6547, "Rend", 3, true))
 
--- Battle Shout's base actionID is also aliased to Rank 2 on Forever. At level
--- 10 that level-12 rank is impossible, so catalog level is an authoritative
--- ceiling even when both modern spellbook IDs and subtext claim Rank 2.
-playerLevel = 10
-spellbook = { { "Battle Shout", "Rank 2", 5242 } }
-trainer:PrimeClassSpellRankCatalog({
-    [1] = { [6673] = { rank = 1 } },
-    [12] = { [5242] = { rank = 2 } },
-})
-assert(trainer:IsClassSpellKnown(6673, "Battle Shout", 1, true))
-assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
--- Level-dependent snapshots must refresh even without SPELLS_CHANGED.
-playerLevel = 12
-assert(trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
-playerLevel = 10
-assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
--- Live level requirements take precedence over the catalog bucket.
-trainer:PrimeClassSpellRankCatalog({
-    [1] = { [6673] = { rank = 1 }, [5242] = { rank = 2, levelReq = 12 } },
-})
-assert(not trainer:IsClassSpellKnown(5242, "Battle Shout", 2, true))
-playerLevel = 60
-
 -- Forever can expose misleading family rank text for a built-in starter
 -- ability. The exact spellbook ID is Rank 1 because the trainer catalog starts
 -- at Rank 2; Sinister Strike Rank 2 must remain visible while Rank 3 does too.
@@ -1010,6 +987,11 @@ canAttack = "SECRET"
 duration = active:ObserveTargetCombat("player", "WOUND", 16)
 assert(math.abs(duration - 3.5) < 0.0001)
 
+-- Secret event keys and reset identities must never enter cache/comparison state.
+active:ResetTargetCombat("SECRET")
+assert(active:ObserveTargetCombat("player", "SECRET", 17) == nil)
+guid = "SECRET"
+assert(active:ObserveTargetCombat("player", "WOUND", 18) == nil)
 guid = "Creature-0-0-0-0-2"
 canAttack, targetsPlayer = true, true
 duration = active:ObserveTargetCombat("player", "WOUND", 20)

@@ -313,6 +313,7 @@ local function ApplySettings()
     elseif ns.CombatMeter then ns.CombatMeter:Refresh() end
     if ns.LeashTimer    then ns.LeashTimer:Refresh() end
     if ns.SpeedrunSplits then ns.SpeedrunSplits:Refresh() end
+    if ns.StickyNote then ns.StickyNote:Refresh() end
     if ns.DPSBadge      then ns.DPSBadge:Refresh() end
     if ns.Tracker        then ns.Tracker:Refresh() end
     if ns.MinimapButton  then ns.MinimapButton:Refresh() end
@@ -3322,6 +3323,7 @@ local function BuildClassTab(c)
         if ClientFeatureAvailable("combat.classBuffTalentReminder", true) then
             y = Checkbox(c, y, 0, "Track Unspent Talent Points", "classBuffTalentPoints")
         end
+        y = Checkbox(c, y, 0, "Remind for Bagged Weapon Stones (out of combat)", "classBuffWeaponStones")
         y = Checkbox(c, y, 0, "Only show while in combat", "classBuffOnlyInCombat")
         y = y - 6
 
@@ -3606,6 +3608,14 @@ local function BuildSpeedrunTab(c)
     ginfo:SetText("|cffffd100The floating button requires TurboFace Movers|r")
     ginfo:SetTextColor(0.5, 0.5, 0.5)
     y = y - 24
+
+    -- Sticky note
+    c._tfApply = RefreshOwner("StickyNote")
+    y = Header(c, y, "Sticky Note", { dbKey = "stickyNoteEnabled" }, nil, c._tfApply,
+        "A draggable personal note with a +/- collapse button. Text, position, visibility, and collapsed state are saved per character. Use /tf note to toggle it.")
+    Button(c, y, 0, 130, "Open Sticky Note", function() if ns.StickyNote then ns.StickyNote:Show() end end)
+    Button(c, y, 140, 150, "Reset Note Position", function() if ns.StickyNote then ns.StickyNote:ResetPosition(); ns.StickyNote:Show() end end)
+    y = y - 42
 
     -- ------------------------------------------------------------------
     -- Trainer spells

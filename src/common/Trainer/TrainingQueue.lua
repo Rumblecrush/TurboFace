@@ -321,9 +321,8 @@ local function IsQueueRecordKnown(record)
         and Trainer.IsProfessionRankSpellKnown and Trainer:IsProfessionRankSpellKnown(spellID) then
         return true
     end
-    if record.scope == "class" and Trainer.IsClassSpellKnown
-        and Trainer:IsClassSpellKnown(spellID, record.name, record.rankNum, record.hasRealRank) then
-        return true
+    if record.scope == "class" and Trainer.IsClassSpellKnown then
+        return Trainer:IsClassSpellKnown(spellID, record.name, record.rankNum, record.hasRealRank)
     end
     if ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then return true end
     return false

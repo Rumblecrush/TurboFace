@@ -1,5 +1,13 @@
 # TurboFace Forever Changelog
 
+## 0.20.0 — notes, weapon stones, and training fixes
+
+- Added a dark, draggable sticky note with per-character persistence, collapse/expand, and an optional Speedrun parent gate.
+- Added compatible, level-eligible bagged weapon-stone reminders to the Class queue, checking both hands outside combat.
+- Fixed learned-rank detection across all classes and preserved rank metadata through trainer visits and queue refreshes.
+- Guarded swing-timer caches against unreadable target GUIDs in restricted encounters.
+- See [complete release notes](../releases/0.20.0.md).
+
 ## 0.19.4 — starter-rank spellbook identity
 
 - Fixed Class Training still hiding starter-family Rank 2 rows such as Warrior

@@ -114,6 +114,43 @@ function API.IsKnownSpellID(spellID)
     return false
 end
 
+-- GUIDs may be opaque in restricted encounters. Never let one become an
+-- addon table key or participate in identity comparisons.
+function API.ReadableGUID(value)
+    if type(value) == "string" and value ~= "" then return value end
+    return nil
+end
+
+function API.GetUnitGUID(unit)
+    local ok, value = pcall(UnitGUID, unit)
+    if ok then return API.ReadableGUID(value) end
+    return nil
+end
+
+-- Class Training needs the modern player's learned IDs, not a slot's active
+-- override or legacy family-level IsPlayerSpell result. Match What's Training?
+-- with an explicit player bank and override matching disabled.
+function API.IsClassSpellIDKnown(spellID)
+    local book = C_SpellBook
+    local inBook = book and book.IsSpellInSpellBook
+    local known = book and book.IsSpellKnown
+    if type(inBook) ~= "function" and type(known) ~= "function" then
+        return nil
+    end
+    local bank = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+    if type(inBook) == "function" then
+        local ok, value = pcall(inBook, spellID, bank, false)
+        if ok and value == true then return true end
+    end
+    if type(known) == "function" then
+        local ok, value = pcall(known, spellID, bank)
+        if ok and value == true then return true end
+    end
+    -- Errors/unreadable values never turn an untrained rank into learned.
+    return false
+end
+
+
 -- =============================================================================
 -- AURAS  (retail 10.x+ moved to C_UnitAuras with aura-data tables)
 -- =============================================================================

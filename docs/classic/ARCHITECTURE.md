@@ -1,7 +1,7 @@
 # TurboFace Architecture
 
 **Last updated:** 2026-10-05
-**Current addon version:** 0.19.4
+**Current addon version:** 0.20.0
 **Target client:** World of Warcraft Classic Era 1.15.9+
 **TOC interface:** 11509
 **Saved-variable schema:** 79
@@ -3219,7 +3219,7 @@ Gate: `trainerEnabled`. TurboFace owns the Training runtime: trainer/merchant ca
 
 **Deferred static data.** Retained `Trainer/data/*.lua` files register loader closures in `Trainer.BuiltinLoaders`; no large table is constructed when Training is disabled. `BuiltinMerge.lua` merges only class, Hunter pet-trainer, and Warlock pet seed facts, then releases staging tables. LibProfessionDB's generated files independently register `ns.LibProfessionDBDataLoaders`; those closures materialize the recipe tables only on the first Recipes view and are then released. Profession/recipe SavedVariable seed merge branches no longer exist.
 
-**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Exact known-spell identity owns unranked abilities; ranked entries use a cached live spellbook name/rank snapshot because clients can either replace older numeric IDs or alias an entire rank family as known. Modern spellbook records map the base slot `actionID`, rather than an optional active `spellID` override, back to catalog ranks; this includes the implicit Rank 1 of a family whose trainer catalog starts at Rank 2. Catalog level requirements cap that snapshot so a client alias cannot mark a future rank learned before the character could train it; a character-level change also invalidates the cached snapshot. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
+**Spellbook views.** `Trainer/UI_Spellbook.lua` owns `Class Training` and `Skills` side tabs. Class Training consumes the class seed/discovery store and evaluates current known/talent state at render time. Modern learned state uses `API.IsClassSpellIDKnown`, which queries the explicit player spellbook bank with override matching disabled and then the modern known-spell predicate. Both positive and negative results are authoritative for every class. `Trainer/ClassicRankChains.lua` supplies ordered replacement chains from What's Training?'s Vanilla catalog so learned higher ranks cover replaced lower IDs without name or level guesses. Legacy clients lacking both modern queries retain the cached slot/name/rank fallback. The training queue uses the same decision and does not fall through to the broad combat predicate after a negative result. Skills owns Weapon Master entries, profession starters, and profession proficiency ranks from `Trainer/SkillData.lua`; it combines character-level and profession-skill requirements and keeps book/quest-only secondary-profession ranks visible but non-queueable.
 
 **Profession side views.** `Trainer/UI_Profession.lua` owns `Training` and `Recipes` next to the native profession window. Training builds an always-available baseline from trainer-only recipes in the embedded MIT-licensed LibProfessionDB 1.7.0 subset, filters proficiency-rank rows into the Skills owner, and overlays the persistent live-trainer snapshot for authoritative cost/status details. When LibProfessionDB deliberately lacks a verified Vanilla trainer learn requirement, Training keeps the row conservatively under Not Yet Available as `Skill ?`; it never substitutes the recipe's crafting-difficulty threshold. Recipes admits recipes with a confirmed vendor, quest, container, or drop path. LibProfessionDB's client-derived recipe-item index excludes profession-rank books. Because its community-derived trainer flags over-classify some externally acquired recipes, mixed trainer/external rows remain in Recipes while only trainer-without-external-source rows seed Training; observed live rows overlay the baseline by spell ID. Auto-taught, unknown-source, and never-implemented rows remain excluded. The currently open Classic TradeSkill book supplies live known state and icons. Recipes separates missing, ignored, and already-known entries, exposes only external acquisition sources in tooltips, and refreshes on `TRADE_SKILL_UPDATE`. The generated database files register deferred closures at startup and materialize when either profession view first needs them.
 
@@ -4527,3 +4527,22 @@ The unified tree now treats `Core/Compat.lua`, `Plus/InterfaceTweaks.lua`, and `
 ### Phase 33 repository baseline
 
 Canonical repository documentation lives under `docs/`; runtime source overlays no longer carry duplicate architecture/changelog/build-manifest snapshots. `tests/` and `build/verify.py` jointly enforce the Phase 32 convergence boundary, direct client-identity allowlist, documentation freshness, safe build destinations, and package inventory. Generated `dist/` output is disposable and ignored by Git.
+
+### Personal sticky note
+
+`StickyNote.lua` owns a lazily created draggable note. Text, center-relative
+position, open state, and collapsed state live in `TurboFaceCharDB.stickyNote`, outside portable
+profiles. The module restores visible notes at PLAYER_LOGIN without keyboard
+focus; text changes save immediately to the character table. The close button
+hides without deleting; resetting position preserves text. Open through Options,
+`/tf note`, or `/tfnote`; the same implementation serves both clients.
+
+The sticky note uses a muted charcoal background. Its +/- button hides the body
+while retaining the draggable header. Stored coordinates refer to the expanded
+center so the header stays in place across collapse, drag, expand, and reload.
+
+The Speedrun parent gate `stickyNoteEnabled` defaults to false. Disabled startup
+creates no note UI or character note data; the one-time login listener unregisters
+itself. Public actions respect the gate. Refresh hides an existing note and clears
+keyboard focus without changing the stored open preference, allowing restoration
+on re-enable. Profile application refreshes the gate independently of note data.

@@ -6,16 +6,12 @@ local GetSpellTabInfo = ns.API.GetSpellTabInfo
 local GetSpellBookItemName = ns.API.GetSpellBookItemName
 local GetSpellBookItemSpellID = ns.API.GetSpellBookItemSpellID
 
--- Exact spell IDs are not a complete learned-state authority on clients that
--- replace an older rank in the spellbook. Keep a compact name -> highest-rank
--- snapshot of the player's actual spellbook as the fallback shared by the
--- Class Training list and its auto-training queue.
+-- Legacy Classic fallback for clients without modern learned-ID queries.
+-- Modern clients bypass this slot/name cache and use explicit replacement
+-- chains below; level eligibility never establishes learned state.
 local knownSpellbookRanks = {}
 local knownSpellbookRanksDirty = true
-local knownSpellbookRanksLevel
 local classRankBySpellID = {}
-local classLevelBySpellID = {}
-local classRanksByName = {}
 local firstTrainerRankByName = {}
 local classRankCatalogSource
 
@@ -24,37 +20,23 @@ function Trainer:InvalidateKnownSpellbookRanks()
     wipe(knownSpellbookRanks)
 end
 
--- Starter abilities do not have a Rank 1 row in the trainer catalog: the
--- character already owns that rank before ever visiting a trainer. Forever's
--- retail-derived spellbook can report family/rank metadata that makes this
--- built-in rank look like Rank 2. Build an exact spell-ID rank index from the
--- active class catalog so the spellbook slot itself remains authoritative.
+-- Catalog metadata for the legacy slot fallback. Built-in starter ranks may
+-- be absent from trainer rows. Modern clients use the learned-ID path below.
 function Trainer:PrimeClassSpellRankCatalog(dataTable)
     if classRankCatalogSource == dataTable then return end
     classRankCatalogSource = dataTable
     wipe(classRankBySpellID)
-    wipe(classLevelBySpellID)
-    wipe(classRanksByName)
     wipe(firstTrainerRankByName)
 
-    for level, spells in pairs(dataTable or {}) do
+    for _, spells in pairs(dataTable or {}) do
         for spellID, data in pairs(spells) do
             local rank = type(data) == "table" and tonumber(data.rank) or nil
-            local requiredLevel = type(data) == "table" and tonumber(data.levelReq)
-                or tonumber(level)
             spellID = tonumber(spellID)
             if spellID and rank then
                 classRankBySpellID[spellID] = rank
-                classLevelBySpellID[spellID] = requiredLevel
                 local name = GetSpellInfo and GetSpellInfo(spellID) or nil
                 if type(name) == "string" and name ~= "" then
                     firstTrainerRankByName[name] = math.min(firstTrainerRankByName[name] or rank, rank)
-                    local ranks = classRanksByName[name]
-                    if not ranks then
-                        ranks = {}
-                        classRanksByName[name] = ranks
-                    end
-                    ranks[#ranks + 1] = { rank = rank, level = requiredLevel }
                 end
             end
         end
@@ -64,11 +46,7 @@ function Trainer:PrimeClassSpellRankCatalog(dataTable)
 end
 
 function Trainer:GetKnownSpellbookRanks()
-    local playerLevel = UnitLevel and tonumber(UnitLevel("player")) or nil
-    if not knownSpellbookRanksDirty and knownSpellbookRanksLevel == playerLevel then
-        return knownSpellbookRanks
-    end
-    knownSpellbookRanksLevel = playerLevel
+    if not knownSpellbookRanksDirty then return knownSpellbookRanks end
     wipe(knownSpellbookRanks)
 
     if GetNumSpellTabs and GetSpellTabInfo and GetSpellBookItemName then
@@ -82,21 +60,6 @@ function Trainer:GetKnownSpellbookRanks()
                     local spellID = GetSpellBookItemSpellID
                         and tonumber(GetSpellBookItemSpellID(index, BOOKTYPE_SPELL or "spell")) or nil
                     local rank = spellID and classRankBySpellID[spellID] or nil
-                    local rankLevel = spellID and classLevelBySpellID[spellID] or nil
-                    if rank and rankLevel and playerLevel and rankLevel > playerLevel then
-                        -- Forever can alias a learned low-rank slot directly to
-                        -- a future trainer rank. A character cannot already own
-                        -- a catalog rank above their level, so clamp the slot to
-                        -- the highest rank that was actually attainable. Rank 1
-                        -- remains the implicit floor for starter families whose
-                        -- catalog begins at Rank 2.
-                        rank = 1
-                        for _, candidate in ipairs(classRanksByName[name] or {}) do
-                            if candidate.level and candidate.level <= playerLevel then
-                                rank = math.max(rank, candidate.rank)
-                            end
-                        end
-                    end
                     if not rank then
                         rank = type(subText) == "string" and tonumber(subText:match("%d+")) or nil
                     end
@@ -119,16 +82,30 @@ function Trainer:GetKnownSpellbookRanks()
 end
 
 function Trainer:IsClassSpellKnown(spellID, name, rankNum, hasRealRank)
+    -- Modern exact queries are authoritative, including a negative result.
+    -- Do not promote a family from slot metadata, character level, or the
+    -- broad combat predicate after this path says the rank is untrained.
+    if spellID and ns.API.IsClassSpellIDKnown then
+        local learned = ns.API.IsClassSpellIDKnown(spellID)
+        if learned ~= nil then
+            if learned then return true end
+            local chain = self.GetClassSpellRankChain and self:GetClassSpellRankChain(spellID)
+            local found = false
+            for _, id in ipairs(chain or {}) do
+                if found and ns.API.IsClassSpellIDKnown(id) == true then return true end
+                if id == spellID then found = true end
+            end
+            return false
+        end
+    end
+    -- Legacy Classic clients without modern queries retain their slot scan.
     if type(name) ~= "string" or name == "" then
         name = spellID and GetSpellInfo and GetSpellInfo(spellID) or nil
     end
     local knownRank = name and self:GetKnownSpellbookRanks()[name] or nil
     if hasRealRank then
-        -- Forever's retail-derived IsSpellKnown/C_SpellBook predicate can
-        -- answer true for every ID in a learned rank chain. It therefore says
-        -- Rend Rank 2 is known when the spellbook contains only Rank 1. The
-        -- normalized spellbook snapshot is the rank authority; never let the
-        -- family-level predicate promote an unlearned rank into Already Known.
+        -- On legacy clients, preserve the slot-rank result rather than
+        -- replacing it with a broad family-level known-spell predicate.
         return knownRank ~= nil and knownRank >= (tonumber(rankNum) or 1)
     end
     if spellID and ns.API and ns.API.IsKnownSpellID and ns.API.IsKnownSpellID(spellID) then

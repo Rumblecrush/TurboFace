@@ -148,6 +148,7 @@ function Trainer:ResolveClassTrainerServiceSpellID(serviceName, serviceRank, ser
     if wantedLevel and wantedLevel <= 0 then wantedLevel = nil end
 
     local bestSpellID, bestScore, bestCount
+    local matchedName
     for level, spells in pairs(classData) do
         if type(spells) == "table" then
             for spellID, data in pairs(spells) do
@@ -159,6 +160,7 @@ function Trainer:ResolveClassTrainerServiceSpellID(serviceName, serviceRank, ser
                         self:RequestSpellDataIfNeeded(spellID)
                     end
                     if spellName == serviceName then
+                        matchedName = true
                         local dataRank = type(data) == "table" and TrainerRankNumber(data.rank) or nil
                         local rankConflicts = wantedRank and dataRank and wantedRank ~= dataRank
                         if not rankConflicts then
@@ -183,8 +185,8 @@ function Trainer:ResolveClassTrainerServiceSpellID(serviceName, serviceRank, ser
         end
     end
 
-    if bestCount == 1 then return bestSpellID end
-    return nil
+    if bestCount == 1 then return bestSpellID, true end
+    return nil, matchedName == true
 end
 
 function Trainer:GetSpellIDForService(i)
@@ -193,6 +195,15 @@ function Trainer:GetSpellIDForService(i)
     local serviceName, serviceRank = self:GetTrainerServiceInfoCompat(i)
     local serviceLevelReq = GetTrainerServiceLevelReq and GetTrainerServiceLevelReq(i) or nil
     local spellID
+
+    -- A tooltip can identify the currently learned rank of the same name.
+    -- Resolve seeded class rows by name plus rank/level before accepting it.
+    -- An ambiguous catalog family must not fall through to a name-only alias.
+    if not self:DetectTrainerProfession() then
+        local catalogID, matchedName = self:ResolveClassTrainerServiceSpellID(
+            serviceName, serviceRank, serviceLevelReq)
+        if matchedName then return catalogID end
+    end
 
     -- Retail-derived clients expose structured trainer tooltip data. Its id is
     -- not assumed to be a spell ID: accept it only when numeric spell metadata
